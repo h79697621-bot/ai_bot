@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AI Чат</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f0f0f; height: 100vh; display: flex; flex-direction: column; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 15px 20px; text-align: center; border-bottom: 1px solid #2a2a3e; }
+        .header h2 { font-size: 18px; margin-bottom: 5px; }
+        .header p { font-size: 12px; opacity: 0.7; }
+        .chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .message-user { align-self: flex-end; background: linear-gradient(135deg, #2a2a4e, #1a1a3e); color: white; padding: 10px 15px; border-radius: 20px 20px 5px 20px; max-width: 80%; }
+        .message-bot { align-self: flex-start; background: #1e1e2e; color: #e0e0e0; padding: 10px 15px; border-radius: 20px 20px 20px 5px; max-width: 80%; border: 1px solid #2a2a3e; }
+        .typing { align-self: flex-start; background: #1e1e2e; padding: 10px 15px; border-radius: 20px; display: flex; gap: 5px; }
+        .typing span { width: 8px; height: 8px; background: #888; border-radius: 50%; animation: blink 1.4s infinite; }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); } 30% { opacity: 1; transform: scale(1.2); } }
+        .input-panel { background: #1a1a2a; padding: 10px 15px; border-top: 1px solid #2a2a3e; display: flex; gap: 10px; }
+        .input-panel input { flex: 1; background: #0f0f1a; border: 1px solid #2a2a3e; border-radius: 25px; padding: 12px 18px; color: white; font-size: 16px; outline: none; }
+        .input-panel button { background: linear-gradient(135deg, #4a4a6e, #2a2a4e); border: none; border-radius: 25px; padding: 0 20px; color: white; font-size: 16px; cursor: pointer; }
+        .model-selector { background: #1a1a2a; padding: 10px 15px; border-top: 1px solid #2a2a3e; display: flex; gap: 10px; overflow-x: auto; }
+        .model-btn { background: #0f0f1a; border: 1px solid #2a2a3e; border-radius: 20px; padding: 6px 12px; color: #aaa; font-size: 12px; cursor: pointer; }
+        .model-btn.active { background: #4a4a6e; border-color: #6a6a8e; color: white; }
+        .clear-btn { background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 20px; padding: 6px 12px; color: #cc6666; font-size: 12px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="header"><h2>AI Чат</h2><p>GitHub Models</p></div>
+    <div class="chat-container" id="chatContainer"><div class="message-bot">Привет! Выбери модель и задавай вопросы.</div></div>
+    <div class="model-selector" id="modelSelector"></div>
+    <div class="input-panel"><input type="text" id="messageInput" placeholder="Напишите сообщение..." autofocus><button id="sendBtn">Отправить</button></div>
+    <script>
+        let currentModel = 'llama', isLoading = false;
+        const models = { llama: { name: 'Llama 3.2' }, phi: { name: 'Phi-3.5 Mini' }, mistral: { name: 'Mistral 7B' } };
+        function loadModels() {
+            const container = document.getElementById('modelSelector');
+            container.innerHTML = '';
+            for (const [key, model] of Object.entries(models)) {
+                const btn = document.createElement('div');
+                btn.className = 'model-btn' + (currentModel === key ? ' active' : '');
+                btn.textContent = model.name;
+                btn.onclick = () => { currentModel = key; document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); addMessage('bot', 'Модель: ' + model.name); };
+                container.appendChild(btn);
+            }
+            const clearBtn = document.createElement('div');
+            clearBtn.className = 'clear-btn';
+            clearBtn.textContent = 'Очистить';
+            clearBtn.onclick = () => { document.getElementById('chatContainer').innerHTML = ''; addMessage('bot', 'История очищена'); };
+            container.appendChild(clearBtn);
+        }
+        function addMessage(role, text) { const container = document.getElementById('chatContainer'); const div = document.createElement('div'); div.className = role === 'user' ? 'message-user' : 'message-bot'; div.innerHTML = text.replace(/\n/g, '<br>'); container.appendChild(div); container.scrollTop = container.scrollHeight; }
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || isLoading) return;
+            input.value = '';
+            addMessage('user', text);
+            isLoading = true;
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing';
+            typingDiv.innerHTML = '<span></span><span></span><span></span>';
+            document.getElementById('chatContainer').appendChild(typingDiv);
+            try {
+                const response = await fetch('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, model: currentModel }) });
+                const data = await response.json();
+                typingDiv.remove();
+                addMessage('bot', data.answer || 'Ошибка');
+            } catch (error) { typingDiv.remove(); addMessage('bot', 'Ошибка'); }
+            finally { isLoading = false; }
+        }
+        document.getElementById('sendBtn').onclick = sendMessage;
+        document.getElementById('messageInput').onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+        loadModels();
+        const tg = window.Telegram?.WebApp; if (tg) { tg.expand(); tg.ready(); }
+    </script>
+</body>
+</html>
