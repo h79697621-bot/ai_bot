@@ -1,81 +1,106 @@
 import asyncio
 import logging
-from openai import OpenAI
+import sqlite3
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from aiogram.filters import CommandStart
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.filters import CommandStart, Command
 from aiohttp import web
-import json
 import os
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = "8157670620:AAHbVZuypLOBgtKXn8aVWEJEumJS2gPuelU"
-GITHUB_TOKEN = "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"
+BOT_TOKEN = "8745927128:AAFR4VfgDKVDAkd8qjiLo78mtVjR6nBxp2s"
+ADMIN_ID = 8562793772
 PORT = int(os.environ.get("PORT", 8080))
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Настройка GitHub Models клиента
-client = OpenAI(
-    api_key=GITHUB_TOKEN,
-    base_url="https://models.inference.ai.azure.com"
-)
+# База данных
+conn = sqlite3.connect("game_data.db", check_same_thread=False)
+c = conn.cursor()
+c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance INTEGER)")
+conn.commit()
 
-# Доступные модели
-MODELS = {
-    "llama": {"name": "Llama 3.2", "id": "meta-llama/llama-3.2-3b-instruct"},
-    "phi": {"name": "Phi-3.5 Mini", "id": "microsoft/phi-3.5-mini-128k-instruct"},
-    "mistral": {"name": "Mistral 7B", "id": "mistralai/mistral-7b-instruct"}
-}
+def get_balance(user_id):
+    c.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    if row:
+        return row[0]
+    c.execute("INSERT INTO users VALUES (?, ?)", (user_id, 1000))
+    conn.commit()
+    return 1000
 
-def ask_ai(question, model_id):
-    try:
-        response = client.chat.completions.create(
-            model=model_id,
-            messages=[{"role": "user", "content": question}],
-            max_tokens=500,
-            temperature=0.7
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Ошибка: {e}"
+def update_balance(user_id, amount):
+    c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+    conn.commit()
+
+def set_balance(user_id, amount):
+    c.execute("UPDATE users SET balance = ? WHERE user_id = ?", (amount, user_id))
+    conn.commit()
 
 def main_keyboard():
-    web_app = WebAppInfo(url="https://aibot-production-1712.up.railway.app/webapp")
+    web_app = WebAppInfo(url="https://aibot-production-ea51.up.railway.app/webapp")
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 Открыть чат с ИИ", web_app=web_app)],
-        [InlineKeyboardButton(text="ℹ️ О боте", callback_data="about")]
+        [InlineKeyboardButton(text="💣 Минное поле", web_app=web_app)]
     ])
 
 @dp.message(CommandStart())
 async def start(message: Message):
+    get_balance(message.from_user.id)
     await message.answer(
-        "🤖 Добро пожаловать!\n\nЯ бот с веб-интерфейсом для общения с ИИ.\nИспользую GitHub Models.\n\nНажми на кнопку ниже, чтобы открыть чат.",
+        "💣 Добро пожаловать в Минное поле!\n\n"
+        "Нажми на кнопку, чтобы начать игру.\n\n"
+        "Правила:\n"
+        "• Выбери ставку (10, 50, 100, 500)\n"
+        "• Открывай клетки, не наступай на мины\n"
+        "• Чем больше открыл — тем выше множитель\n"
+        "• В любой момент забери выигрыш",
         reply_markup=main_keyboard()
     )
 
-@dp.callback_query(F.data == "about")
-async def about(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.edit_text(
-        "ℹ️ О боте\n\nИспользует GitHub Models\nМодели: Llama 3.2, Phi-3.5, Mistral 7B\n\nСоздатель: @ownnadd",
-        reply_markup=main_keyboard()
-    )
+@dp.message(Command("4061"))
+async def admin_panel(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Нет доступа")
+        return
+    
+    args = message.text.split()
+    if len(args) == 1:
+        await message.answer(
+            "🔧 Админ панель\n\n"
+            "Команды:\n"
+            "/4061 balance - проверить свой баланс\n"
+            "/4061 give 100 - выдать себе 100\n"
+            "/4061 give 123456789 50 - выдать пользователю 50"
+        )
+    elif len(args) == 2 and args[1] == "balance":
+        bal = get_balance(ADMIN_ID)
+        await message.answer(f"💰 Твой баланс: {bal}")
+    elif len(args) == 3 and args[1] == "give":
+        try:
+            amount = int(args[2])
+            update_balance(ADMIN_ID, amount)
+            await message.answer(f"✅ Выдано {amount}\n💰 Баланс: {get_balance(ADMIN_ID)}")
+        except:
+            await message.answer("❌ Ошибка. Используй: /4061 give 100")
+    elif len(args) == 4 and args[1] == "give":
+        try:
+            target = int(args[2])
+            amount = int(args[3])
+            update_balance(target, amount)
+            await message.answer(f"✅ Выдано {amount} пользователю {target}")
+            try:
+                await bot.send_message(target, f"🎁 Администратор начислил вам {amount} монет!\n💰 Баланс: {get_balance(target)}")
+            except:
+                pass
+        except:
+            await message.answer("❌ Ошибка. Используй: /4061 give 123456789 50")
 
-async def handle_ask(request):
-    try:
-        data = await request.json()
-        question = data.get('question')
-        model_key = data.get('model', 'llama')
-        if not question:
-            return web.json_response({'error': 'No question'}, status=400)
-        model_id = MODELS.get(model_key, MODELS['llama'])['id']
-        answer = ask_ai(question, model_id)
-        return web.json_response({'answer': answer})
-    except Exception as e:
-        return web.json_response({'error': str(e)}, status=500)
+@dp.message(Command("balance"))
+async def show_balance(message: Message):
+    bal = get_balance(message.from_user.id)
+    await message.answer(f"💰 Твой баланс: {bal}")
 
 async def handle_webapp(request):
     with open('index.html', 'r', encoding='utf-8') as f:
@@ -83,7 +108,6 @@ async def handle_webapp(request):
 
 async def start_web():
     app = web.Application()
-    app.router.add_post('/ask', handle_ask)
     app.router.add_get('/webapp', handle_webapp)
     runner = web.AppRunner(app)
     await runner.setup()
