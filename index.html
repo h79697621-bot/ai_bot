@@ -3,78 +3,272 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>AI Чат</title>
+    <title>💣 Минное поле</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f0f0f; height: 100vh; display: flex; flex-direction: column; }
-        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 15px 20px; text-align: center; border-bottom: 1px solid #2a2a3e; }
-        .header h2 { font-size: 18px; margin-bottom: 5px; }
-        .header p { font-size: 12px; opacity: 0.7; }
-        .chat-container { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-        .message-user { align-self: flex-end; background: linear-gradient(135deg, #2a2a4e, #1a1a3e); color: white; padding: 10px 15px; border-radius: 20px 20px 5px 20px; max-width: 80%; }
-        .message-bot { align-self: flex-start; background: #1e1e2e; color: #e0e0e0; padding: 10px 15px; border-radius: 20px 20px 20px 5px; max-width: 80%; border: 1px solid #2a2a3e; }
-        .typing { align-self: flex-start; background: #1e1e2e; padding: 10px 15px; border-radius: 20px; display: flex; gap: 5px; }
-        .typing span { width: 8px; height: 8px; background: #888; border-radius: 50%; animation: blink 1.4s infinite; }
-        .typing span:nth-child(2) { animation-delay: 0.2s; }
-        .typing span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes blink { 0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); } 30% { opacity: 1; transform: scale(1.2); } }
-        .input-panel { background: #1a1a2a; padding: 10px 15px; border-top: 1px solid #2a2a3e; display: flex; gap: 10px; }
-        .input-panel input { flex: 1; background: #0f0f1a; border: 1px solid #2a2a3e; border-radius: 25px; padding: 12px 18px; color: white; font-size: 16px; outline: none; }
-        .input-panel button { background: linear-gradient(135deg, #4a4a6e, #2a2a4e); border: none; border-radius: 25px; padding: 0 20px; color: white; font-size: 16px; cursor: pointer; }
-        .model-selector { background: #1a1a2a; padding: 10px 15px; border-top: 1px solid #2a2a3e; display: flex; gap: 10px; overflow-x: auto; }
-        .model-btn { background: #0f0f1a; border: 1px solid #2a2a3e; border-radius: 20px; padding: 6px 12px; color: #aaa; font-size: 12px; cursor: pointer; }
-        .model-btn.active { background: #4a4a6e; border-color: #6a6a8e; color: white; }
-        .clear-btn { background: #2a1a1a; border: 1px solid #4a2a2a; border-radius: 20px; padding: 6px 12px; color: #cc6666; font-size: 12px; cursor: pointer; }
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #0a0a0f;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .game-container {
+            background: #0f0f14;
+            border-radius: 32px;
+            padding: 20px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            border: 1px solid #1a1a24;
+        }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { font-size: 28px; background: linear-gradient(135deg, #fff, #a0a0c0); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .balance-panel { background: #1a1a24; border-radius: 20px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .balance-label { color: #888; font-size: 14px; }
+        .balance-value { color: #fff; font-size: 24px; font-weight: bold; }
+        .bet-panel { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+        .bet-btn { background: #1a1a24; border: 1px solid #2a2a34; border-radius: 40px; padding: 10px 20px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        .bet-btn.active { background: linear-gradient(135deg, #4a4a6e, #2a2a4e); border-color: #6a6a8e; }
+        .field { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; }
+        .cell { aspect-ratio: 1; background: #1a1a24; border: 2px solid #2a2a34; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 28px; cursor: pointer; transition: all 0.2s; }
+        .cell:active { transform: scale(0.95); }
+        .cell.opened { background: #0f0f14; border-color: #3a3a4e; cursor: default; }
+        .cell.mine { background: #2a1a1a; border-color: #4a2a2a; animation: shake 0.3s ease-in-out; }
+        @keyframes shake {
+            0% { transform: translateX(0); background: #ff4400; }
+            25% { transform: translateX(-5px); background: #ff6600; }
+            50% { transform: translateX(5px); background: #ff4400; }
+            75% { transform: translateX(-5px); background: #ff2200; }
+            100% { transform: translateX(0); background: #4a2a2a; }
+        }
+        .info-panel { background: #1a1a24; border-radius: 20px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .multiplier { color: #4a9eff; font-size: 18px; font-weight: bold; }
+        .win-amount { color: #4eff9e; font-size: 18px; font-weight: bold; }
+        .cashout-btn { width: 100%; background: linear-gradient(135deg, #2a6e3a, #1a4e2a); border: none; border-radius: 40px; padding: 14px; color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        .reset-btn { background: #2a2a34; border: none; border-radius: 40px; padding: 10px; color: white; font-size: 14px; cursor: pointer; margin-top: 10px; width: 100%; }
+        .message { margin-top: 16px; text-align: center; color: #888; font-size: 14px; }
+        .explosion-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, #ff4400, #8b0000);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 999;
+            transition: opacity 0.1s;
+        }
+        .explosion-text {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 10px red;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
-    <div class="header"><h2>AI Чат</h2><p>GitHub Models</p></div>
-    <div class="chat-container" id="chatContainer"><div class="message-bot">Привет! Выбери модель и задавай вопросы.</div></div>
-    <div class="model-selector" id="modelSelector"></div>
-    <div class="input-panel"><input type="text" id="messageInput" placeholder="Напишите сообщение..." autofocus><button id="sendBtn">Отправить</button></div>
-    <script>
-        let currentModel = 'llama', isLoading = false;
-        const models = { llama: { name: 'Llama 3.2' }, phi: { name: 'Phi-3.5 Mini' }, mistral: { name: 'Mistral 7B' } };
-        function loadModels() {
-            const container = document.getElementById('modelSelector');
-            container.innerHTML = '';
-            for (const [key, model] of Object.entries(models)) {
-                const btn = document.createElement('div');
-                btn.className = 'model-btn' + (currentModel === key ? ' active' : '');
-                btn.textContent = model.name;
-                btn.onclick = () => { currentModel = key; document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); addMessage('bot', 'Модель: ' + model.name); };
-                container.appendChild(btn);
+<div class="explosion-overlay" id="explosionOverlay"></div>
+<div class="explosion-text" id="explosionText">💥 ВЗРЫВ! 💥</div>
+<div class="game-container">
+    <div class="header"><h1>💣 Минное поле</h1></div>
+    <div class="balance-panel"><span class="balance-label">💰 Баланс</span><span class="balance-value" id="balance">1000</span></div>
+    <div class="bet-panel" id="betPanel">
+        <div class="bet-btn" data-bet="10">10</div>
+        <div class="bet-btn" data-bet="50">50</div>
+        <div class="bet-btn" data-bet="100">100</div>
+        <div class="bet-btn" data-bet="500">500</div>
+    </div>
+    <div class="field" id="field"></div>
+    <div class="info-panel"><span class="multiplier" id="multiplier">x1.00</span><span class="win-amount" id="winAmount">0</span></div>
+    <button class="cashout-btn" id="cashoutBtn">💰 Забрать выигрыш</button>
+    <button class="reset-btn" id="resetBtn">🔄 Новая игра</button>
+    <div class="message" id="message">Выбери ставку и нажми на клетку</div>
+</div>
+<script>
+    let balance = 1000;
+    let currentBet = 0;
+    let gameActive = false;
+    let minesCount = 5;
+    let openedCells = 0;
+    let gameField = [];
+    let minePositions = [];
+    const multipliers = {0:1.00,1:1.10,2:1.20,3:1.30,4:1.50,5:1.70,6:2.00,7:2.30,8:2.70,9:3.20,10:3.80,11:4.50,12:5.30,13:6.20,14:7.20,15:8.50,16:10.0,17:12.0,18:14.5,19:17.5,20:21.0};
+    
+    async function loadBalance() {
+        try {
+            const res = await fetch('/balance');
+            const data = await res.json();
+            balance = data.balance;
+            document.getElementById('balance').textContent = balance;
+        } catch(e) { console.log(e); }
+    }
+    
+    async function saveBalance(newBalance) {
+        try {
+            await fetch('/update_balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ balance: newBalance })
+            });
+        } catch(e) { console.log(e); }
+    }
+    
+    function showExplosion() {
+        const overlay = document.getElementById('explosionOverlay');
+        const text = document.getElementById('explosionText');
+        overlay.style.opacity = '0.8';
+        text.style.opacity = '1';
+        setTimeout(() => {
+            overlay.style.opacity = '0';
+            text.style.opacity = '0';
+        }, 500);
+    }
+    
+    function updateUI() {
+        document.getElementById('balance').textContent = balance;
+        let m = multipliers[openedCells] || 1.0;
+        document.getElementById('multiplier').textContent = `x${m.toFixed(2)}`;
+        document.getElementById('winAmount').textContent = Math.floor(currentBet * m);
+    }
+    
+    function renderField() {
+        const container = document.getElementById('field');
+        container.innerHTML = '';
+        for (let i = 0; i < 25; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            if (gameField[i] === 'opened') {
+                cell.classList.add('opened');
+                cell.textContent = '✓';
+            } else {
+                cell.textContent = '?';
             }
-            const clearBtn = document.createElement('div');
-            clearBtn.className = 'clear-btn';
-            clearBtn.textContent = 'Очистить';
-            clearBtn.onclick = () => { document.getElementById('chatContainer').innerHTML = ''; addMessage('bot', 'История очищена'); };
-            container.appendChild(clearBtn);
+            cell.onclick = () => openCell(i);
+            container.appendChild(cell);
         }
-        function addMessage(role, text) { const container = document.getElementById('chatContainer'); const div = document.createElement('div'); div.className = role === 'user' ? 'message-user' : 'message-bot'; div.innerHTML = text.replace(/\n/g, '<br>'); container.appendChild(div); container.scrollTop = container.scrollHeight; }
-        async function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const text = input.value.trim();
-            if (!text || isLoading) return;
-            input.value = '';
-            addMessage('user', text);
-            isLoading = true;
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'typing';
-            typingDiv.innerHTML = '<span></span><span></span><span></span>';
-            document.getElementById('chatContainer').appendChild(typingDiv);
-            try {
-                const response = await fetch('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, model: currentModel }) });
-                const data = await response.json();
-                typingDiv.remove();
-                addMessage('bot', data.answer || 'Ошибка');
-            } catch (error) { typingDiv.remove(); addMessage('bot', 'Ошибка'); }
-            finally { isLoading = false; }
+    }
+    
+    function initField() {
+        gameField = Array(25).fill('?');
+        minePositions = [];
+        let m = 0;
+        while (m < minesCount) {
+            let p = Math.floor(Math.random() * 25);
+            if (!minePositions.includes(p)) {
+                minePositions.push(p);
+                m++;
+            }
         }
-        document.getElementById('sendBtn').onclick = sendMessage;
-        document.getElementById('messageInput').onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
-        loadModels();
-        const tg = window.Telegram?.WebApp; if (tg) { tg.expand(); tg.ready(); }
-    </script>
+        openedCells = 0;
+    }
+    
+    function openCell(i) {
+        if (!gameActive) {
+            document.getElementById('message').textContent = '❌ Сначала выбери ставку!';
+            return;
+        }
+        if (gameField[i] === 'opened') {
+            document.getElementById('message').textContent = '❌ Уже открыто';
+            return;
+        }
+        if (minePositions.includes(i)) {
+            gameActive = false;
+            showExplosion();
+            for (let pos of minePositions) {
+                gameField[pos] = 'mine';
+            }
+            renderField();
+            balance -= currentBet;
+            updateUI();
+            saveBalance(balance);
+            document.getElementById('message').textContent = `💥 БАХ! Ты наступил на мину! Проигрыш: ${currentBet}`;
+            return;
+        }
+        gameField[i] = 'opened';
+        openedCells++;
+        renderField();
+        updateUI();
+        let m = multipliers[openedCells] || 1.0;
+        document.getElementById('message').textContent = `✅ Безопасно! Множитель x${m.toFixed(2)} | Выигрыш: ${Math.floor(currentBet * m)}`;
+        
+        let openedCount = gameField.filter(c => c === 'opened').length;
+        if (openedCount === 20) {
+            let win = Math.floor(currentBet * (multipliers[openedCells] || 1.0));
+            balance += win;
+            updateUI();
+            saveBalance(balance);
+            gameActive = false;
+            document.getElementById('message').textContent = `🎉 Все мины обезврежены! Выигрыш: ${win}`;
+            renderField();
+        }
+    }
+    
+    function cashout() {
+        if (!gameActive) {
+            document.getElementById('message').textContent = '❌ Нет игры';
+            return;
+        }
+        let win = Math.floor(currentBet * (multipliers[openedCells] || 1.0));
+        balance += win;
+        updateUI();
+        saveBalance(balance);
+        gameActive = false;
+        document.getElementById('message').textContent = `💰 Забрал ${win}! Баланс: ${balance}`;
+        renderField();
+    }
+    
+    function resetGame() {
+        if (currentBet === 0) {
+            document.getElementById('message').textContent = '❌ Выбери ставку';
+            return;
+        }
+        if (balance < currentBet) {
+            document.getElementById('message').textContent = `❌ Не хватает! Баланс: ${balance}`;
+            return;
+        }
+        gameActive = true;
+        initField();
+        renderField();
+        document.getElementById('message').textContent = `🎮 Игра началась! Ставка: ${currentBet}`;
+        updateUI();
+    }
+    
+    document.querySelectorAll('.bet-btn').forEach(b => {
+        b.addEventListener('click', () => {
+            if (gameActive) {
+                document.getElementById('message').textContent = '❌ Заверши игру';
+                return;
+            }
+            document.querySelectorAll('.bet-btn').forEach(btn => btn.classList.remove('active'));
+            b.classList.add('active');
+            currentBet = parseInt(b.dataset.bet);
+            document.getElementById('message').textContent = `Ставка: ${currentBet}. Нажми "Новая игра"`;
+            updateUI();
+        });
+    });
+    
+    document.getElementById('cashoutBtn').onclick = cashout;
+    document.getElementById('resetBtn').onclick = resetGame;
+    
+    loadBalance();
+    updateUI();
+    initField();
+    renderField();
+    
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.expand(); tg.ready(); }
+</script>
 </body>
 </html>
