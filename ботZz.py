@@ -40,12 +40,9 @@ def get_balance(user_id):
         conn.commit()
         return 1500
 
-def update_balance(user_id, amount):
-    current = get_balance(user_id)
-    new_balance = current + amount
-    cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (new_balance, user_id))
+def set_balance(user_id, amount):
+    cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (amount, user_id))
     conn.commit()
-    return new_balance
 
 def can_take_daily(user_id):
     cursor.execute('SELECT last_daily FROM users WHERE user_id = ?', (user_id,))
@@ -60,7 +57,7 @@ def set_daily_taken(user_id):
     cursor.execute('UPDATE users SET last_daily = ? WHERE user_id = ?', (datetime.now().isoformat(), user_id))
     conn.commit()
 
-# ========== АДМИНЫ (ТВОЙ ID) ==========
+# ========== АДМИНЫ ==========
 ADMIN_IDS = [8364328997]
 
 # ========== ИГРА ==========
@@ -75,63 +72,76 @@ class Game:
         self.safe_count = self.total - mines_count
         self.opened = [[False for _ in range(self.cols)] for _ in range(self.rows)]
         self.mines = [[False for _ in range(self.cols)] for _ in range(self.rows)]
-
-        mine_positions = random.sample(range(self.total), mines_count)
-        for pos in mine_positions:
+        
+        # Расставляем мины
+        positions = list(range(self.total))
+        random.shuffle(positions)
+        for i in range(mines_count):
+            pos = positions[i]
             r = pos // self.cols
             c = pos % self.cols
             self.mines[r][c] = True
-
-        self.lost = False
+        
+        self.opened_count = 0
+        self.game_over = False
         self.won = False
-        self.opened_safe_count = 0
-
+    
     def open_cell(self, r, c):
+        if self.game_over:
+            return "game_over"
         if self.opened[r][c]:
             return "already"
+        
         self.opened[r][c] = True
-
+        
         if self.mines[r][c]:
-            self.lost = True
+            self.game_over = True
             return "mine"
         else:
-            self.opened_safe_count += 1
-            if self.opened_safe_count == self.safe_count:
+            self.opened_count += 1
+            if self.opened_count == self.safe_count:
+                self.game_over = True
                 self.won = True
             return "safe"
-
+    
     def get_current_win(self):
-        # Выигрыш: ставка * мины * 2 * (открытые_клетки / безопасные_клетки)
-        if self.opened_safe_count == 0:
+        # Простая формула: ставка * (открытые_клетки / безопасные_клетки) * множитель_сложности
+        if self.opened_count == 0:
             return 0
-        max_win = self.bet * self.mines_count * 2
-        return int(max_win * (self.opened_safe_count / self.safe_count))
-
+        multiplier = self.mines_count  # 2, 4 или 8
+        win = int(self.bet * (self.opened_count / self.safe_count) * multiplier)
+        return max(win, 0)
+    
+    def get_max_win(self):
+        return self.bet * self.mines_count
+    
     def make_board(self, show_all=False):
         buttons = []
         for i in range(self.rows):
             row = []
             for j in range(self.cols):
-                text = "❓"
-                cb = f"cell_{i}_{j}"
-                if self.opened[i][j] or show_all:
+                if show_all:
                     if self.mines[i][j]:
                         text = "💣"
                     else:
                         text = "💎"
-                    cb = "ignore"
-                row.append(InlineKeyboardButton(text=text, callback_data=cb))
+                    row.append(InlineKeyboardButton(text=text, callback_data="ignore"))
+                elif self.opened[i][j]:
+                    if self.mines[i][j]:
+                        text = "💣"
+                    else:
+                        text = "💎"
+                    row.append(InlineKeyboardButton(text=text, callback_data="ignore"))
+                else:
+                    row.append(InlineKeyboardButton(text="❓", callback_data=f"cell_{i}_{j}"))
             buttons.append(row)
-
-        current_win = self.get_current_win()
-        if not self.lost and current_win > 0:
+        
+        if not self.game_over and self.opened_count > 0:
+            current_win = self.get_current_win()
             buttons.append([InlineKeyboardButton(text=f"✨ Забрать {current_win} Gram", callback_data="collect")])
         
         buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
         return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    def calc_win(self):
-        return self.get_current_win()
 
 # ========== КЛАВИАТУРЫ ==========
 def start_kb():
@@ -146,11 +156,11 @@ def back_kb():
         [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")]
     ])
 
-def mines_kb(bet):
+def mines_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="2 мины 💥 (x4)", callback_data=f"mines_2_{bet}")],
-        [InlineKeyboardButton(text="4 мины 💥 (x8)", callback_data=f"mines_4_{bet}")],
-        [InlineKeyboardButton(text="8 мин 💥 (x16)", callback_data=f"mines_8_{bet}")]
+        [InlineKeyboardButton(text="2 мины (x2)", callback_data="mines_2")],
+        [InlineKeyboardButton(text="4 мины (x4)", callback_data="mines_4")],
+        [InlineKeyboardButton(text="8 мин (x8)", callback_data="mines_8")]
     ])
 
 # ========== КОМАНДЫ ==========
@@ -161,8 +171,11 @@ async def start(msg: Message):
     await msg.answer(
         f"<b>Привет, {msg.from_user.first_name}!</b>\n\n"
         f"💰 Баланс: {balance} Gram\n\n"
-        f"Игра «Мины» — делай ставку и выигрывай!\n"
-        f"В любой момент можешь забрать выигрыш!",
+        f"🎲 Игра «Мины»:\n"
+        f"• Сделай ставку\n"
+        f"• Выбери сложность\n"
+        f"• Открывай клетки\n"
+        f"• Забери выигрыш в любой момент!",
         reply_markup=start_kb()
     )
 
@@ -180,7 +193,7 @@ async def admin_cmd(msg: Message):
     if msg.from_user.id not in ADMIN_IDS:
         await msg.answer("⛔ Нет доступа")
         return
-    await msg.answer("👑 Админ-панель\n\n/give ID сумма - выдать граммы")
+    await msg.answer("👑 Админ-панель\n\n/give ID сумма")
 
 @dp.message(Command("give"))
 async def give_cmd(msg: Message):
@@ -193,16 +206,16 @@ async def give_cmd(msg: Message):
     try:
         user_id = int(args[1])
         amount = int(args[2])
-        update_balance(user_id, amount)
-        await msg.answer(f"✅ Выдано {amount} Gram пользователю {user_id}")
+        current = get_balance(user_id)
+        set_balance(user_id, current + amount)
+        await msg.answer(f"✅ Выдано {amount} Gram\n💰 Новый баланс: {get_balance(user_id)}")
     except:
         await msg.answer("❌ Ошибка")
 
 @dp.callback_query(F.data == "menu")
 async def menu(cb: CallbackQuery):
     user_id = cb.from_user.id
-    if user_id in games:
-        games.pop(user_id, None)
+    games.pop(user_id, None)
     balance = get_balance(user_id)
     await cb.message.answer(
         f"💰 Баланс: {balance} Gram\n\nГлавное меню:",
@@ -220,29 +233,30 @@ async def balance(cb: CallbackQuery):
 async def daily(cb: CallbackQuery):
     user_id = cb.from_user.id
     if can_take_daily(user_id):
-        new_balance = update_balance(user_id, 2500)
+        current = get_balance(user_id)
+        set_balance(user_id, current + 2500)
         set_daily_taken(user_id)
         await cb.message.answer(
-            f"🎁 Получено 2500 Gram!\n"
-            f"💰 Баланс: {new_balance} Gram",
+            f"🎁 +2500 Gram!\n"
+            f"💰 Новый баланс: {get_balance(user_id)} Gram",
             reply_markup=back_kb()
         )
     else:
-        cursor.execute('SELECT balance, last_daily FROM users WHERE user_id = ?', (user_id,))
-        bal, last = cursor.fetchone()
-        last_dt = datetime.fromisoformat(last)
-        next_day = (last_dt + timedelta(days=1)).strftime("%d.%m.%Y в %H:%M")
         await cb.message.answer(
             f"⏳ Ты уже получал бонус сегодня!\n"
-            f"💰 Твой баланс: {bal} Gram\n"
-            f"🔜 Следующий бонус доступен: {next_day}",
+            f"💰 Баланс: {get_balance(user_id)} Gram",
             reply_markup=back_kb()
         )
     await cb.answer()
 
 @dp.callback_query(F.data == "play")
 async def play(cb: CallbackQuery):
-    await cb.message.answer("💰 <b>Укажи ставку</b>\n\nПример: `мины 100`")
+    await cb.message.answer(
+        "💰 <b>Укажи ставку</b>\n\n"
+        "Пример: `мины 100`\n"
+        "Минимальная ставка: 10 Gram",
+        reply_markup=back_kb()
+    )
     await cb.answer()
 
 @dp.message(lambda msg: msg.text and msg.text.lower().startswith("мины"))
@@ -253,43 +267,58 @@ async def mines_command(msg: Message):
     except:
         await msg.answer("❌ Пример: `мины 100`")
         return
-
+    
     balance = get_balance(user_id)
     if bet < 10:
         await msg.answer("❌ Минимальная ставка: 10 Gram")
         return
     if bet > balance:
-        await msg.answer(f"❌ Недостаточно средств! Баланс: {balance} Gram")
+        await msg.answer(f"❌ Недостаточно средств!\n💰 Баланс: {balance} Gram")
         return
-
-    await msg.answer(f"✅ Ставка: {bet} Gram\n\n🎲 Выбери сложность:", reply_markup=mines_kb(bet))
+    
+    # Сохраняем ставку во временную переменную
+    games[f"bet_{user_id}"] = bet
+    await msg.answer(
+        f"✅ Ставка: {bet} Gram\n\n"
+        f"🎲 Выбери сложность:",
+        reply_markup=mines_kb()
+    )
 
 @dp.callback_query(F.data.startswith("mines_"))
 async def set_mines(cb: CallbackQuery):
-    try:
-        _, mines, bet = cb.data.split("_")
-        mines = int(mines)
-        bet = int(bet)
-    except:
-        await cb.answer("Ошибка")
-        return
-
     user_id = cb.from_user.id
+    
+    # Получаем ставку
+    bet_key = f"bet_{user_id}"
+    if bet_key not in games:
+        await cb.answer("❌ Сначала укажи ставку командой «мины X»")
+        return
+    
+    bet = games[bet_key]
+    del games[bet_key]
+    
+    mines_count = int(cb.data.split("_")[1])
+    
+    # Проверяем баланс ещё раз
     balance = get_balance(user_id)
     if bet > balance:
         await cb.answer(f"❌ Недостаточно средств! Баланс: {balance} Gram", show_alert=True)
         return
-
-    update_balance(user_id, -bet)
-    game = Game(user_id, mines, bet)
+    
+    # Списываем ставку
+    set_balance(user_id, balance - bet)
+    
+    # Создаём игру
+    game = Game(user_id, mines_count, bet)
     games[user_id] = game
-
+    
     await cb.message.answer(
         f"🎲 <b>Игра началась!</b>\n\n"
         f"💰 Ставка: {bet} Gram\n"
-        f"🏆 Максимальный выигрыш: {game.calc_win()} Gram\n\n"
+        f"💣 Мин: {mines_count}\n"
+        f"🏆 Макс. выигрыш: {game.get_max_win()} Gram\n\n"
         f"💎 Открывай клетки!\n"
-        f"✨ Нажми «Забрать» в любой момент!",
+        f"✨ Чем больше откроешь — тем больше выигрыш!",
         reply_markup=game.make_board()
     )
     await cb.answer()
@@ -299,51 +328,32 @@ async def cell(cb: CallbackQuery):
     user_id = cb.from_user.id
     
     if user_id not in games:
-        await cb.answer("❌ Нет активной игры! Напиши /start", show_alert=True)
+        await cb.answer("❌ Нет активной игры! Напиши /start")
         return
-
+    
     game = games[user_id]
     
-    if game.lost:
-        await cb.answer("Игра уже проиграна! Начни новую", show_alert=True)
+    if game.game_over:
+        await cb.answer("Игра уже закончена!")
         return
     
-    if game.won:
-        await cb.answer("Ты уже выиграл! Нажми ✨ Забрать выигрыш", show_alert=True)
-        return
-
     try:
         _, r, c = cb.data.split("_")
         r, c = int(r), int(c)
     except:
         await cb.answer("Ошибка")
         return
-
+    
     result = game.open_cell(r, c)
-
+    
     if result == "already":
         await cb.answer("⚠️ Эта клетка уже открыта!")
         return
-
-    try:
-        await bot.edit_message_reply_markup(
-            chat_id=user_id,
-            message_id=cb.message.message_id,
-            reply_markup=game.make_board()
-        )
-    except Exception as e:
-        log.error(f"Ошибка обновления клавиатуры: {e}")
-
+    
+    # Обновляем поле
+    await cb.message.edit_reply_markup(reply_markup=game.make_board())
+    
     if result == "mine":
-        game.lost = True
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=user_id,
-                message_id=cb.message.message_id,
-                reply_markup=game.make_board(show_all=True)
-            )
-        except:
-            pass
         await bot.send_message(
             user_id,
             f"💥 <b>Ты попал на мину!</b>\n\n"
@@ -352,15 +362,20 @@ async def cell(cb: CallbackQuery):
             reply_markup=start_kb()
         )
         games.pop(user_id, None)
-    elif game.won:
+    elif result == "safe" and game.won:
+        win = game.get_current_win()
+        current_balance = get_balance(user_id)
+        set_balance(user_id, current_balance + win)
         await bot.send_message(
             user_id,
-            f"🎉 <b>Поздравляю! Ты открыл все безопасные клетки!</b> 🎉\n\n"
+            f"🎉 <b>ПОБЕДА!</b> 🎉\n\n"
             f"💰 Ставка: {game.bet} Gram\n"
-            f"🏆 Твой выигрыш: {game.get_current_win()} Gram",
-            reply_markup=game.make_board()
+            f"🏆 Выигрыш: {win} Gram\n"
+            f"💎 Новый баланс: {get_balance(user_id)} Gram",
+            reply_markup=start_kb()
         )
-
+        games.pop(user_id, None)
+    
     await cb.answer()
 
 @dp.callback_query(F.data == "collect")
@@ -368,31 +383,36 @@ async def collect(cb: CallbackQuery):
     user_id = cb.from_user.id
     
     if user_id not in games:
-        await cb.answer("❌ Нет активной игры!", show_alert=True)
+        await cb.answer("❌ Нет активной игры!")
         return
-
+    
     game = games[user_id]
     
-    if game.lost:
-        await cb.answer("❌ Игра проиграна! Нечего забирать.", show_alert=True)
+    if game.game_over:
+        await cb.answer("Игра уже закончена!")
         return
-
+    
     win = game.get_current_win()
     if win <= 0:
-        await cb.answer("❌ Пока нечего забирать! Открой хотя бы одну клетку.", show_alert=True)
+        await cb.answer("❌ Пока нечего забирать! Открой хотя бы одну клетку.")
         return
-
-    new_balance = update_balance(user_id, win)
+    
+    current_balance = get_balance(user_id)
+    set_balance(user_id, current_balance + win)
     
     await bot.send_message(
         user_id,
         f"✨ <b>Ты забрал выигрыш!</b> ✨\n\n"
         f"💰 Ставка: {game.bet} Gram\n"
         f"🏆 Выигрыш: +{win} Gram\n"
-        f"💰 Новый баланс: {new_balance} Gram",
+        f"💎 Новый баланс: {get_balance(user_id)} Gram",
         reply_markup=start_kb()
     )
     games.pop(user_id, None)
+    await cb.answer()
+
+@dp.callback_query(F.data == "ignore")
+async def ignore(cb: CallbackQuery):
     await cb.answer()
 
 # ========== ЗАПУСК ==========
