@@ -1,2 +1,4 @@
-aiogram
-asynql
+aiogram==3.17.0
+aiohttp==3.9.0
+yarl==1.17.0
+multidict==6.0.5
