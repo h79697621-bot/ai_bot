@@ -60,8 +60,8 @@ def set_daily_taken(user_id):
     cursor.execute('UPDATE users SET last_daily = ? WHERE user_id = ?', (datetime.now().isoformat(), user_id))
     conn.commit()
 
-# ========== АДМИНЫ ==========
-ADMIN_IDS = [4061]
+# ========== АДМИНЫ (ТВОЙ ID) ==========
+ADMIN_IDS = [8364328997]
 
 # ========== ИГРА ==========
 class Game:
@@ -101,12 +101,10 @@ class Game:
             return "safe"
 
     def get_current_win(self):
-        # Выигрыш пропорционален открытым безопасным клеткам
+        # Выигрыш: ставка * мины * 2 * (открытые_клетки / безопасные_клетки)
         if self.opened_safe_count == 0:
             return 0
-        # Максимальный выигрыш при открытии всех клеток
         max_win = self.bet * self.mines_count * 2
-        # Текущий выигрыш пропорционально открытым клеткам
         return int(max_win * (self.opened_safe_count / self.safe_count))
 
     def make_board(self, show_all=False):
@@ -125,12 +123,9 @@ class Game:
                 row.append(InlineKeyboardButton(text=text, callback_data=cb))
             buttons.append(row)
 
-        # Кнопка "Забрать выигрыш" всегда внизу
         current_win = self.get_current_win()
-        if not self.lost and not self.won and current_win > 0:
+        if not self.lost and current_win > 0:
             buttons.append([InlineKeyboardButton(text=f"✨ Забрать {current_win} Gram", callback_data="collect")])
-        elif self.won:
-            buttons.append([InlineKeyboardButton(text=f"✨ Забрать {self.get_current_win()} Gram", callback_data="collect")])
         
         buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -167,7 +162,6 @@ async def start(msg: Message):
         f"<b>Привет, {msg.from_user.first_name}!</b>\n\n"
         f"💰 Баланс: {balance} Gram\n\n"
         f"Игра «Мины» — делай ставку и выигрывай!\n"
-        f"Нажимай на клетки, но не попадись на мину!\n"
         f"В любой момент можешь забрать выигрыш!",
         reply_markup=start_kb()
     )
@@ -176,6 +170,10 @@ async def start(msg: Message):
 async def balance_cmd(msg: Message):
     bal = get_balance(msg.from_user.id)
     await msg.answer(f"💰 Баланс: {bal} Gram", reply_markup=back_kb())
+
+@dp.message(Command("id"))
+async def get_id(msg: Message):
+    await msg.answer(f"🆔 Твой ID: `{msg.from_user.id}`")
 
 @dp.message(Command("admin"))
 async def admin_cmd(msg: Message):
@@ -203,7 +201,6 @@ async def give_cmd(msg: Message):
 @dp.callback_query(F.data == "menu")
 async def menu(cb: CallbackQuery):
     user_id = cb.from_user.id
-    # Очищаем игру, если была
     if user_id in games:
         games.pop(user_id, None)
     balance = get_balance(user_id)
@@ -292,8 +289,7 @@ async def set_mines(cb: CallbackQuery):
         f"💰 Ставка: {bet} Gram\n"
         f"🏆 Максимальный выигрыш: {game.calc_win()} Gram\n\n"
         f"💎 Открывай клетки!\n"
-        f"💰 Сумма выигрыша растёт с каждой открытой клеткой!\n"
-        f"✨ Нажми «Забрать» в любой момент, чтобы забрать текущий выигрыш!",
+        f"✨ Нажми «Забрать» в любой момент!",
         reply_markup=game.make_board()
     )
     await cb.answer()
@@ -329,7 +325,6 @@ async def cell(cb: CallbackQuery):
         await cb.answer("⚠️ Эта клетка уже открыта!")
         return
 
-    # Обновляем клавиатуру после хода
     try:
         await bot.edit_message_reply_markup(
             chat_id=user_id,
@@ -353,8 +348,7 @@ async def cell(cb: CallbackQuery):
             user_id,
             f"💥 <b>Ты попал на мину!</b>\n\n"
             f"💰 Ставка: {game.bet} Gram\n"
-            f"💸 Потеряно: {game.bet} Gram\n\n"
-            f"Попробуй снова!",
+            f"💸 Потеряно: {game.bet} Gram",
             reply_markup=start_kb()
         )
         games.pop(user_id, None)
@@ -363,8 +357,7 @@ async def cell(cb: CallbackQuery):
             user_id,
             f"🎉 <b>Поздравляю! Ты открыл все безопасные клетки!</b> 🎉\n\n"
             f"💰 Ставка: {game.bet} Gram\n"
-            f"🏆 Твой выигрыш: {game.get_current_win()} Gram\n\n"
-            f"👇 Нажми на кнопку «✨ Забрать...» ниже, чтобы получить деньги!",
+            f"🏆 Твой выигрыш: {game.get_current_win()} Gram",
             reply_markup=game.make_board()
         )
 
@@ -396,8 +389,7 @@ async def collect(cb: CallbackQuery):
         f"✨ <b>Ты забрал выигрыш!</b> ✨\n\n"
         f"💰 Ставка: {game.bet} Gram\n"
         f"🏆 Выигрыш: +{win} Gram\n"
-        f"💰 Новый баланс: {new_balance} Gram\n\n"
-        f"Сыграем ещё?",
+        f"💰 Новый баланс: {new_balance} Gram",
         reply_markup=start_kb()
     )
     games.pop(user_id, None)
