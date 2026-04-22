@@ -41,7 +41,8 @@ def get_balance(user_id):
         return 1500
 
 def update_balance(user_id, amount):
-    new_balance = get_balance(user_id) + amount
+    current = get_balance(user_id)
+    new_balance = current + amount
     cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (new_balance, user_id))
     conn.commit()
     return new_balance
@@ -151,17 +152,18 @@ def mines_kb(bet):
 @dp.message(Command("start"))
 async def start(msg: Message):
     user_id = msg.from_user.id
-    get_balance(user_id)
+    balance = get_balance(user_id)
     await msg.answer(
         f"<b>Привет, {msg.from_user.first_name}!</b>\n\n"
-        f"💰 Баланс: {get_balance(user_id)} Gram\n\n"
+        f"💰 Баланс: {balance} Gram\n\n"
         f"Игра «Мины» — делай ставку и выигрывай!",
         reply_markup=start_kb()
     )
 
 @dp.message(Command("balance"))
 async def balance_cmd(msg: Message):
-    await msg.answer(f"💰 Баланс: {get_balance(msg.from_user.id)} Gram", reply_markup=back_kb())
+    bal = get_balance(msg.from_user.id)
+    await msg.answer(f"💰 Баланс: {bal} Gram", reply_markup=back_kb())
 
 @dp.message(Command("admin"))
 async def admin_cmd(msg: Message):
@@ -188,26 +190,42 @@ async def give_cmd(msg: Message):
 
 @dp.callback_query(F.data == "menu")
 async def menu(cb: CallbackQuery):
+    user_id = cb.from_user.id
+    balance = get_balance(user_id)
     await cb.message.answer(
-        f"💰 Баланс: {get_balance(cb.from_user.id)} Gram\n\nГлавное меню:",
+        f"💰 Баланс: {balance} Gram\n\nГлавное меню:",
         reply_markup=start_kb()
     )
     await cb.answer()
 
 @dp.callback_query(F.data == "balance")
 async def balance(cb: CallbackQuery):
-    await cb.message.answer(f"💰 Баланс: {get_balance(cb.from_user.id)} Gram", reply_markup=back_kb())
+    bal = get_balance(cb.from_user.id)
+    await cb.message.answer(f"💰 Баланс: {bal} Gram", reply_markup=back_kb())
     await cb.answer()
 
 @dp.callback_query(F.data == "daily")
 async def daily(cb: CallbackQuery):
     user_id = cb.from_user.id
     if can_take_daily(user_id):
-        update_balance(user_id, 2500)
+        new_balance = update_balance(user_id, 2500)
         set_daily_taken(user_id)
-        await cb.message.answer(f"🎁 Получено 2500 Gram!\n💰 Баланс: {get_balance(user_id)} Gram", reply_markup=back_kb())
+        await cb.message.answer(
+            f"🎁 Получено 2500 Gram!\n"
+            f"💰 Баланс: {new_balance} Gram",
+            reply_markup=back_kb()
+        )
     else:
-        await cb.message.answer("⏳ Ты уже получал бонус сегодня. Приходи завтра!", reply_markup=back_kb())
+        cursor.execute('SELECT balance, last_daily FROM users WHERE user_id = ?', (user_id,))
+        bal, last = cursor.fetchone()
+        last_dt = datetime.fromisoformat(last)
+        next_day = (last_dt + timedelta(days=1)).strftime("%d.%m.%Y в %H:%M")
+        await cb.message.answer(
+            f"⏳ Ты уже получал бонус сегодня!\n"
+            f"💰 Твой баланс: {bal} Gram\n"
+            f"🔜 Следующий бонус доступен: {next_day}",
+            reply_markup=back_kb()
+        )
     await cb.answer()
 
 @dp.callback_query(F.data == "play")
@@ -267,12 +285,12 @@ async def set_mines(cb: CallbackQuery):
 async def cell(cb: CallbackQuery):
     user_id = cb.from_user.id
     if user_id not in games:
-        await cb.answer("Нет активной игры. Напиши /start")
+        await cb.answer("Нет активной игры. Напиши /start", show_alert=True)
         return
 
     game = games[user_id]
     if game.lost or game.won:
-        await cb.answer("Игра окончена")
+        await cb.answer("Игра уже окончена!")
         return
 
     try:
@@ -285,7 +303,7 @@ async def cell(cb: CallbackQuery):
     result = game.open_cell(r, c)
 
     if result == "already":
-        await cb.answer("Уже открыто")
+        await cb.answer("⚠️ Эта клетка уже открыта!")
         return
 
     if result == "mine":
@@ -297,7 +315,13 @@ async def cell(cb: CallbackQuery):
             )
         except:
             pass
-        await bot.send_message(user_id, f"💥 <b>Ты попал на мину!</b>\n\n💰 Потеряно: {game.bet} Gram", reply_markup=start_kb())
+        await bot.send_message(
+            user_id,
+            f"💥 <b>Ты попал на мину!</b>\n\n"
+            f"💰 Ставка: {game.bet} Gram\n"
+            f"💸 Потеряно: {game.bet} Gram",
+            reply_markup=start_kb()
+        )
         games.pop(user_id, None)
     else:
         try:
@@ -311,8 +335,15 @@ async def cell(cb: CallbackQuery):
 
         if game.won:
             win = game.calc_win()
-            update_balance(user_id, win)
-            await bot.send_message(user_id, f"🎉 <b>ПОБЕДА!</b> 🎉\n\n🏆 Выигрыш: {win} Gram\n💰 Баланс: {get_balance(user_id)} Gram", reply_markup=start_kb())
+            new_balance = update_balance(user_id, win)
+            await bot.send_message(
+                user_id,
+                f"🎉 <b>ПОБЕДА!</b> 🎉\n\n"
+                f"💰 Ставка: {game.bet} Gram\n"
+                f"🏆 Выигрыш: {win} Gram\n"
+                f"💎 Новый баланс: {new_balance} Gram",
+                reply_markup=start_kb()
+            )
             games.pop(user_id, None)
 
     await cb.answer()
@@ -321,17 +352,23 @@ async def cell(cb: CallbackQuery):
 async def collect(cb: CallbackQuery):
     user_id = cb.from_user.id
     if user_id not in games:
-        await cb.answer("Нет игры")
+        await cb.answer("Нет активной игры!")
         return
 
     game = games[user_id]
     if not game.won:
-        await cb.answer("Ты ещё не выиграл")
+        await cb.answer("Ты ещё не выиграл! Открой все безопасные клетки.")
         return
 
     win = game.calc_win()
-    update_balance(user_id, win)
-    await bot.send_message(user_id, f"✨ <b>Ты забрал выигрыш!</b>\n\n🏆 +{win} Gram\n💰 Баланс: {get_balance(user_id)} Gram", reply_markup=start_kb())
+    new_balance = update_balance(user_id, win)
+    await bot.send_message(
+        user_id,
+        f"✨ <b>Ты забрал выигрыш!</b>\n\n"
+        f"🏆 +{win} Gram\n"
+        f"💰 Новый баланс: {new_balance} Gram",
+        reply_markup=start_kb()
+    )
     games.pop(user_id, None)
     await cb.answer()
 
