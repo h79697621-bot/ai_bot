@@ -119,10 +119,12 @@ class Game:
                 row.append(InlineKeyboardButton(text=text, callback_data=cb))
             buttons.append(row)
 
+        # Кнопка "Забрать выигрыш" появляется только когда игра выиграна
         if self.won:
             buttons.append([InlineKeyboardButton(text="✨ Забрать выигрыш", callback_data="collect")])
-
-        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
+        else:
+            buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
+        
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     def calc_win(self):
@@ -284,13 +286,20 @@ async def set_mines(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("cell_"))
 async def cell(cb: CallbackQuery):
     user_id = cb.from_user.id
+    
+    # Проверяем наличие игры
     if user_id not in games:
-        await cb.answer("Нет активной игры. Напиши /start", show_alert=True)
+        await cb.answer("❌ Нет активной игры! Напиши /start", show_alert=True)
         return
 
     game = games[user_id]
-    if game.lost or game.won:
-        await cb.answer("Игра уже окончена!")
+    
+    if game.lost:
+        await cb.answer("Игра уже проиграна! Начни новую", show_alert=True)
+        return
+    
+    if game.won:
+        await cb.answer("Ты уже выиграл! Нажми ✨ Забрать выигрыш", show_alert=True)
         return
 
     try:
@@ -306,7 +315,19 @@ async def cell(cb: CallbackQuery):
         await cb.answer("⚠️ Эта клетка уже открыта!")
         return
 
+    # Обновляем клавиатуру после хода
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=user_id,
+            message_id=cb.message.message_id,
+            reply_markup=game.make_board()
+        )
+    except Exception as e:
+        log.error(f"Ошибка обновления клавиатуры: {e}")
+
     if result == "mine":
+        game.lost = True
+        # Показываем все мины
         try:
             await bot.edit_message_reply_markup(
                 chat_id=user_id,
@@ -323,48 +344,39 @@ async def cell(cb: CallbackQuery):
             reply_markup=start_kb()
         )
         games.pop(user_id, None)
-    else:
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=user_id,
-                message_id=cb.message.message_id,
-                reply_markup=game.make_board()
-            )
-        except:
-            pass
-
-        if game.won:
-            win = game.calc_win()
-            new_balance = update_balance(user_id, win)
-            await bot.send_message(
-                user_id,
-                f"🎉 <b>ПОБЕДА!</b> 🎉\n\n"
-                f"💰 Ставка: {game.bet} Gram\n"
-                f"🏆 Выигрыш: {win} Gram\n"
-                f"💎 Новый баланс: {new_balance} Gram",
-                reply_markup=start_kb()
-            )
-            games.pop(user_id, None)
+    elif game.won:
+        # Игра выиграна — кнопка "Забрать выигрыш" уже появится на поле
+        await bot.send_message(
+            user_id,
+            f"🎉 <b>Поздравляю! Ты открыл все безопасные клетки!</b> 🎉\n\n"
+            f"💰 Ставка: {game.bet} Gram\n"
+            f"🏆 Твой выигрыш: {game.calc_win()} Gram\n\n"
+            f"👇 Нажми на кнопку «✨ Забрать выигрыш» ниже, чтобы получить деньги!",
+            reply_markup=game.make_board()
+        )
 
     await cb.answer()
 
 @dp.callback_query(F.data == "collect")
 async def collect(cb: CallbackQuery):
     user_id = cb.from_user.id
+    
     if user_id not in games:
-        await cb.answer("Нет активной игры!")
+        await cb.answer("❌ Нет активной игры!", show_alert=True)
         return
 
     game = games[user_id]
+    
     if not game.won:
-        await cb.answer("Ты ещё не выиграл! Открой все безопасные клетки.")
+        await cb.answer("❌ Ты ещё не выиграл! Открой все безопасные клетки.", show_alert=True)
         return
 
     win = game.calc_win()
     new_balance = update_balance(user_id, win)
+    
     await bot.send_message(
         user_id,
-        f"✨ <b>Ты забрал выигрыш!</b>\n\n"
+        f"✨ <b>Ты забрал выигрыш!</b> ✨\n\n"
         f"🏆 +{win} Gram\n"
         f"💰 Новый баланс: {new_balance} Gram",
         reply_markup=start_kb()
