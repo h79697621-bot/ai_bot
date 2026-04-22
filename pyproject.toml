@@ -1,0 +1,42 @@
+[project]
+name = "telegram-emoji-bot"
+version = "1.0.0"
+description = "Telegram bot for converting images and videos to emoji packs"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram==3.13.1",
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "scikit-image>=0.21.0",
+    "aiofiles>=23.0.0",
+    "python-dotenv>=1.0.0"
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = ["E", "F", "W", "I", "N", "B", "C90"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
