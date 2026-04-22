@@ -84,6 +84,7 @@ class Game:
 
         self.lost = False
         self.won = False
+        self.opened_safe_count = 0
 
     def open_cell(self, r, c):
         if self.opened[r][c]:
@@ -94,14 +95,19 @@ class Game:
             self.lost = True
             return "mine"
         else:
-            opened_safe = sum(
-                1 for i in range(self.rows)
-                for j in range(self.cols)
-                if self.opened[i][j] and not self.mines[i][j]
-            )
-            if opened_safe == self.safe_count:
+            self.opened_safe_count += 1
+            if self.opened_safe_count == self.safe_count:
                 self.won = True
             return "safe"
+
+    def get_current_win(self):
+        # Выигрыш пропорционален открытым безопасным клеткам
+        if self.opened_safe_count == 0:
+            return 0
+        # Максимальный выигрыш при открытии всех клеток
+        max_win = self.bet * self.mines_count * 2
+        # Текущий выигрыш пропорционально открытым клеткам
+        return int(max_win * (self.opened_safe_count / self.safe_count))
 
     def make_board(self, show_all=False):
         buttons = []
@@ -119,16 +125,18 @@ class Game:
                 row.append(InlineKeyboardButton(text=text, callback_data=cb))
             buttons.append(row)
 
-        # Кнопка "Забрать выигрыш" появляется только когда игра выиграна
-        if self.won:
-            buttons.append([InlineKeyboardButton(text="✨ Забрать выигрыш", callback_data="collect")])
-        else:
-            buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
+        # Кнопка "Забрать выигрыш" всегда внизу
+        current_win = self.get_current_win()
+        if not self.lost and not self.won and current_win > 0:
+            buttons.append([InlineKeyboardButton(text=f"✨ Забрать {current_win} Gram", callback_data="collect")])
+        elif self.won:
+            buttons.append([InlineKeyboardButton(text=f"✨ Забрать {self.get_current_win()} Gram", callback_data="collect")])
         
+        buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu")])
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     def calc_win(self):
-        return self.bet * self.mines_count * 2
+        return self.get_current_win()
 
 # ========== КЛАВИАТУРЫ ==========
 def start_kb():
@@ -158,7 +166,9 @@ async def start(msg: Message):
     await msg.answer(
         f"<b>Привет, {msg.from_user.first_name}!</b>\n\n"
         f"💰 Баланс: {balance} Gram\n\n"
-        f"Игра «Мины» — делай ставку и выигрывай!",
+        f"Игра «Мины» — делай ставку и выигрывай!\n"
+        f"Нажимай на клетки, но не попадись на мину!\n"
+        f"В любой момент можешь забрать выигрыш!",
         reply_markup=start_kb()
     )
 
@@ -193,6 +203,9 @@ async def give_cmd(msg: Message):
 @dp.callback_query(F.data == "menu")
 async def menu(cb: CallbackQuery):
     user_id = cb.from_user.id
+    # Очищаем игру, если была
+    if user_id in games:
+        games.pop(user_id, None)
     balance = get_balance(user_id)
     await cb.message.answer(
         f"💰 Баланс: {balance} Gram\n\nГлавное меню:",
@@ -277,8 +290,10 @@ async def set_mines(cb: CallbackQuery):
     await cb.message.answer(
         f"🎲 <b>Игра началась!</b>\n\n"
         f"💰 Ставка: {bet} Gram\n"
-        f"🏆 Выигрыш: {game.calc_win()} Gram\n\n"
-        f"Открывай клетки 💎",
+        f"🏆 Максимальный выигрыш: {game.calc_win()} Gram\n\n"
+        f"💎 Открывай клетки!\n"
+        f"💰 Сумма выигрыша растёт с каждой открытой клеткой!\n"
+        f"✨ Нажми «Забрать» в любой момент, чтобы забрать текущий выигрыш!",
         reply_markup=game.make_board()
     )
     await cb.answer()
@@ -287,7 +302,6 @@ async def set_mines(cb: CallbackQuery):
 async def cell(cb: CallbackQuery):
     user_id = cb.from_user.id
     
-    # Проверяем наличие игры
     if user_id not in games:
         await cb.answer("❌ Нет активной игры! Напиши /start", show_alert=True)
         return
@@ -327,7 +341,6 @@ async def cell(cb: CallbackQuery):
 
     if result == "mine":
         game.lost = True
-        # Показываем все мины
         try:
             await bot.edit_message_reply_markup(
                 chat_id=user_id,
@@ -340,18 +353,18 @@ async def cell(cb: CallbackQuery):
             user_id,
             f"💥 <b>Ты попал на мину!</b>\n\n"
             f"💰 Ставка: {game.bet} Gram\n"
-            f"💸 Потеряно: {game.bet} Gram",
+            f"💸 Потеряно: {game.bet} Gram\n\n"
+            f"Попробуй снова!",
             reply_markup=start_kb()
         )
         games.pop(user_id, None)
     elif game.won:
-        # Игра выиграна — кнопка "Забрать выигрыш" уже появится на поле
         await bot.send_message(
             user_id,
             f"🎉 <b>Поздравляю! Ты открыл все безопасные клетки!</b> 🎉\n\n"
             f"💰 Ставка: {game.bet} Gram\n"
-            f"🏆 Твой выигрыш: {game.calc_win()} Gram\n\n"
-            f"👇 Нажми на кнопку «✨ Забрать выигрыш» ниже, чтобы получить деньги!",
+            f"🏆 Твой выигрыш: {game.get_current_win()} Gram\n\n"
+            f"👇 Нажми на кнопку «✨ Забрать...» ниже, чтобы получить деньги!",
             reply_markup=game.make_board()
         )
 
@@ -367,18 +380,24 @@ async def collect(cb: CallbackQuery):
 
     game = games[user_id]
     
-    if not game.won:
-        await cb.answer("❌ Ты ещё не выиграл! Открой все безопасные клетки.", show_alert=True)
+    if game.lost:
+        await cb.answer("❌ Игра проиграна! Нечего забирать.", show_alert=True)
         return
 
-    win = game.calc_win()
+    win = game.get_current_win()
+    if win <= 0:
+        await cb.answer("❌ Пока нечего забирать! Открой хотя бы одну клетку.", show_alert=True)
+        return
+
     new_balance = update_balance(user_id, win)
     
     await bot.send_message(
         user_id,
         f"✨ <b>Ты забрал выигрыш!</b> ✨\n\n"
-        f"🏆 +{win} Gram\n"
-        f"💰 Новый баланс: {new_balance} Gram",
+        f"💰 Ставка: {game.bet} Gram\n"
+        f"🏆 Выигрыш: +{win} Gram\n"
+        f"💰 Новый баланс: {new_balance} Gram\n\n"
+        f"Сыграем ещё?",
         reply_markup=start_kb()
     )
     games.pop(user_id, None)
