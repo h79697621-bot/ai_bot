@@ -66,7 +66,7 @@ class Game:
                     if self.mines[i][j]:
                         text = "💣"
                     else:
-                        text = "⬜"
+                        text = " "
                     row.append(InlineKeyboardButton(text=text, callback_data="ignore"))
                 else:
                     row.append(InlineKeyboardButton(text="❓", callback_data=f"cell_{i}_{j}"))
@@ -102,7 +102,7 @@ async def menu(cb: CallbackQuery):
 
 @dp.callback_query(F.data == "play")
 async def play(cb: CallbackQuery):
-    await cb.message.answer("🎲", reply_markup=mines_kb())
+    await cb.message.answer(" ", reply_markup=mines_kb())
     await cb.answer()
 
 @dp.callback_query(F.data.startswith("mines_"))
