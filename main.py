@@ -1,190 +1,176 @@
-#!/usr/bin/env python3
-"""
-Telegram Emoji Pack Bot - Main Entry Point
-
-A Telegram bot that converts user-uploaded images and videos into custom emoji packs
-with configurable grid dimensions using Python, OpenCV, and NumPy.
-"""
-
 import asyncio
 import logging
-import sys
-from pathlib import Path
+import random
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.client.bot import DefaultBotProperties
+from aiogram.filters import Command
 
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.session.aiohttp import AiohttpSession
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
-from config import load_config
-from handlers import setup_user_handlers
-from middlewares.logging import LoggingMiddleware
-from middlewares.throttling import ThrottlingMiddleware
+API_TOKEN = '8679806194:AAH35zUFUYhnHWnL210bRwrcTsD_p3ZZM9A'
 
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher()
 
-async def setup_logging():
-    """Setup logging configuration"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler('bot.log', encoding='utf-8')
-        ]
-    )
+games = {}
+
+class Game:
+    def __init__(self, user_id, mines_count):
+        self.user_id = user_id
+        self.mines_count = mines_count
+        self.rows = 4
+        self.cols = 4
+        self.total = self.rows * self.cols
+        self.safe_count = self.total - mines_count
+        self.opened = [[False for _ in range(self.cols)] for _ in range(self.rows)]
+        self.mines = [[False for _ in range(self.cols)] for _ in range(self.rows)]
+        
+        positions = list(range(self.total))
+        random.shuffle(positions)
+        for i in range(mines_count):
+            pos = positions[i]
+            r = pos // self.cols
+            c = pos % self.cols
+            self.mines[r][c] = True
+        
+        self.game_over = False
+        self.won = False
+        self.opened_count = 0
+
+    def open_cell(self, r, c):
+        if self.game_over:
+            return "game_over"
+        if self.opened[r][c]:
+            return "already"
+        
+        self.opened[r][c] = True
+        
+        if self.mines[r][c]:
+            self.game_over = True
+            return "mine"
+        else:
+            self.opened_count += 1
+            if self.opened_count == self.safe_count:
+                self.game_over = True
+                self.won = True
+            return "safe"
+
+    def make_board(self, show_all=False):
+        buttons = []
+        for i in range(self.rows):
+            row = []
+            for j in range(self.cols):
+                if show_all or self.opened[i][j]:
+                    if self.mines[i][j]:
+                        text = "💣"
+                    else:
+                        text = "⬜"
+                    row.append(InlineKeyboardButton(text=text, callback_data="ignore"))
+                else:
+                    row.append(InlineKeyboardButton(text="❓", callback_data=f"cell_{i}_{j}"))
+            buttons.append(row)
+        
+        buttons.append([InlineKeyboardButton(text="🔄", callback_data="new_game")])
+        buttons.append([InlineKeyboardButton(text="🏠", callback_data="menu")])
+        
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def start_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎮", callback_data="play")]
+    ])
+
+def mines_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="2", callback_data="mines_2")],
+        [InlineKeyboardButton(text="4", callback_data="mines_4")],
+        [InlineKeyboardButton(text="8", callback_data="mines_8")]
+    ])
+
+@dp.message(Command("start"))
+async def start(msg: Message):
+    await msg.answer("🎲", reply_markup=start_kb())
+
+@dp.callback_query(F.data == "menu")
+async def menu(cb: CallbackQuery):
+    if cb.from_user.id in games:
+        games.pop(cb.from_user.id)
+    await cb.message.answer("🎲", reply_markup=start_kb())
+    await cb.answer()
+
+@dp.callback_query(F.data == "play")
+async def play(cb: CallbackQuery):
+    await cb.message.answer("🎲", reply_markup=mines_kb())
+    await cb.answer()
+
+@dp.callback_query(F.data.startswith("mines_"))
+async def set_mines(cb: CallbackQuery):
+    mines_count = int(cb.data.split("_")[1])
+    user_id = cb.from_user.id
     
-    # Set specific log levels
-    logging.getLogger("aiogram").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    game = Game(user_id, mines_count)
+    games[user_id] = game
+    
+    await cb.message.answer("🎲", reply_markup=game.make_board())
+    await cb.answer()
 
-
-async def setup_bot_and_dispatcher():
-    """Setup bot and dispatcher with all components"""
+@dp.callback_query(F.data.startswith("cell_"))
+async def cell(cb: CallbackQuery):
+    user_id = cb.from_user.id
+    
+    if user_id not in games:
+        await cb.answer("❌")
+        return
+    
+    game = games[user_id]
+    
+    if game.game_over:
+        await cb.answer("❌")
+        return
+    
     try:
-        # Load configuration
-        config = load_config()
-        
-        # Create bot session with timeout settings
-        session = AiohttpSession()
-        
-        # Initialize bot and dispatcher
-        bot = Bot(
-            token=config.telegram_bot_token,
-            session=session
-        )
-        
-        # Use memory storage for FSM (in production, consider Redis)
-        storage = MemoryStorage()
-        dp = Dispatcher(storage=storage)
-        
-        # Setup middlewares
-        dp.message.middleware(LoggingMiddleware())
-        dp.callback_query.middleware(LoggingMiddleware())
-        dp.message.middleware(ThrottlingMiddleware(rate_limit=3))  # 3 messages per second
-        dp.callback_query.middleware(ThrottlingMiddleware(rate_limit=5))  # 5 callbacks per second
-        
-        # Setup handlers
-        setup_user_handlers(dp)
-        
-        logging.info("Bot and dispatcher setup completed")
-        return bot, dp, config
-        
-    except Exception as e:
-        logging.error(f"Failed to setup bot: {e}")
-        raise
-
-
-async def on_startup():
-    """Execute on bot startup"""
-    logging.info("🚀 Telegram Emoji Pack Bot is starting...")
+        _, r, c = cb.data.split("_")
+        r, c = int(r), int(c)
+    except:
+        await cb.answer("❌")
+        return
     
-    # Ensure cache directories exist
-    from config import CACHE_DIR, IMAGES_CACHE_DIR, VIDEOS_CACHE_DIR
-    for cache_dir in [CACHE_DIR, IMAGES_CACHE_DIR, VIDEOS_CACHE_DIR]:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        logging.info(f"Cache directory ready: {cache_dir}")
+    result = game.open_cell(r, c)
     
-    logging.info("✅ Bot startup completed")
-
-
-async def on_shutdown(bot: Bot):
-    """Execute on bot shutdown"""
-    logging.info("🛑 Telegram Emoji Pack Bot is shutting down...")
+    if result == "already":
+        await cb.answer("⚠️")
+        return
     
-    try:
-        # Close bot session
-        await bot.session.close()
-        
-        # Cleanup cache files older than 1 hour
-        from utils import FileManager
-        config = load_config()
-        file_manager = FileManager(bot, config.max_file_size_mb)
-        cleaned_count, freed_size = await file_manager.cleanup_cache(max_age_hours=1)
-        if cleaned_count > 0:
-            logging.info(f"Cleaned up {cleaned_count} cache files ({freed_size/(1024*1024):.1f}MB)")
-        
-    except Exception as e:
-        logging.error(f"Error during shutdown: {e}")
+    await cb.message.edit_reply_markup(reply_markup=game.make_board())
     
-    logging.info("✅ Bot shutdown completed")
-
-
-async def periodic_cleanup(bot: Bot, interval_hours: int = 1):
-    """Periodic cache cleanup task"""
-    from utils import FileManager
+    if result == "mine":
+        await bot.send_message(user_id, "💥", reply_markup=start_kb())
+        games.pop(user_id, None)
+    elif game.won:
+        await bot.send_message(user_id, "🎉", reply_markup=start_kb())
+        games.pop(user_id, None)
     
-    config = load_config()
-    file_manager = FileManager(bot, config.max_file_size_mb)
-    
-    while True:
-        try:
-            await asyncio.sleep(interval_hours * 3600)  # Convert hours to seconds
-            
-            cleaned_count, freed_size = await file_manager.cleanup_cache(max_age_hours=1)
-            if cleaned_count > 0:
-                logging.info(f"Periodic cleanup: {cleaned_count} files, {freed_size/(1024*1024):.1f}MB freed")
-                
-        except Exception as e:
-            logging.error(f"Periodic cleanup error: {e}")
+    await cb.answer()
 
+@dp.callback_query(F.data == "new_game")
+async def new_game(cb: CallbackQuery):
+    user_id = cb.from_user.id
+    games.pop(user_id, None)
+    await play(cb)
+
+@dp.callback_query(F.data == "ignore")
+async def ignore(cb: CallbackQuery):
+    await cb.answer()
 
 async def main():
-    """Main bot function"""
     try:
-        # Setup logging
-        await setup_logging()
-        
-        # Setup bot components
-        bot, dp, config = await setup_bot_and_dispatcher()
-        
-        # Startup procedures
-        await on_startup()
-        
-        # Start periodic cleanup task
-        cleanup_task = asyncio.create_task(
-            periodic_cleanup(bot, interval_hours=config.cache_cleanup_interval // 3600)
-        )
-        
-        try:
-            # Start bot polling
-            logging.info("🔄 Starting bot polling...")
-            await dp.start_polling(
-                bot,
-                allowed_updates=["message", "callback_query"],
-                skip_updates=True  # Skip pending updates on startup
-            )
-            
-        except KeyboardInterrupt:
-            logging.info("👋 Received shutdown signal")
-            
-        finally:
-            # Cancel cleanup task
-            cleanup_task.cancel()
-            try:
-                await cleanup_task
-            except asyncio.CancelledError:
-                pass
-            
-            # Shutdown procedures
-            await on_shutdown(bot)
-    
-    except Exception as e:
-        logging.error(f"Critical error in main: {e}")
-        sys.exit(1)
+        log.info("Запуск бота...")
+        await dp.start_polling(bot, skip_updates=True)
+    finally:
+        await bot.session.close()
+        log.info("Бот остановлен")
 
-
-if __name__ == "__main__":
-    try:
-        # Check Python version
-        if sys.version_info < (3, 11):
-            print("❌ Python 3.11+ is required")
-            sys.exit(1)
-        
-        # Run the bot
-        asyncio.run(main())
-        
-    except KeyboardInterrupt:
-        print("\n👋 Bot stopped by user")
-    except Exception as e:
-        print(f"❌ Fatal error: {e}")
-        sys.exit(1)
+if __name__ == '__main__':
+    asyncio.run(main())
