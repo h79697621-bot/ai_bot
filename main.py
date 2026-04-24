@@ -174,7 +174,7 @@ async def choose_country(callback: CallbackQuery):
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
     await callback.message.edit_text(
-        f"{country_name}\n\nЦена: 30 звезд или 40 руб\n\nВыберите способ оплаты:",
+        f"{country_name}\n\n \n\nВыберите способ оплаты:",
         reply_markup=buy_account_kb(country)
     )
     await callback.answer()
