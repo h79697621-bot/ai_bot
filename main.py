@@ -14,6 +14,7 @@ from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
 
+# ВСТАВЬ СЮДА ТОКЕН НАПРЯМУЮ
 API_TOKEN = "8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg"
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -69,6 +70,12 @@ waiting_for_emoji = set()
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
+def with_emoji(text):
+    emoji_id = get_setting("welcome_emoji")
+    if emoji_id:
+        return f"<tg-emoji emoji-id='{emoji_id}'></tg-emoji> " + text
+    return text
+
 # ===== МЕНЮ =====
 def main_menu(user_id):
     kb = [
@@ -83,20 +90,16 @@ def main_menu(user_id):
 # ===== СТАРТ =====
 @dp.message(Command("start"))
 async def start(message: Message):
-    emoji_id = get_setting("welcome_emoji")
-
-    text = f"Здравствуйте, {message.from_user.first_name}!"
-
-    if emoji_id:
-        text = f"<tg-emoji emoji-id='{emoji_id}'></tg-emoji> " + text
-
-    await message.answer(text, reply_markup=main_menu(message.from_user.id))
+    await message.answer(
+        with_emoji(f"Здравствуйте, {message.from_user.first_name}!"),
+        reply_markup=main_menu(message.from_user.id)
+    )
 
 # ===== НАЗАД =====
 @dp.callback_query(F.data == "back_to_menu")
 async def back(callback: CallbackQuery):
     await callback.message.edit_text(
-        f"Здравствуйте, {callback.from_user.first_name}!",
+        with_emoji(f"Здравствуйте, {callback.from_user.first_name}!"),
         reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
@@ -109,14 +112,14 @@ async def stars(callback: CallbackQuery):
         [InlineKeyboardButton(text="100 (130 руб)", callback_data="buy_100")],
         [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
     ])
-    await callback.message.edit_text("Выберите количество", reply_markup=kb)
+    await callback.message.edit_text(with_emoji("Выберите количество"), reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy(callback: CallbackQuery):
     stars = callback.data.split("_")[1]
     await callback.message.edit_text(
-        f"Покупка {stars} звезд\nСвязь: @{SELLER_USERNAME}"
+        with_emoji(f"Покупка {stars} звезд\nСвязь: @{SELLER_USERNAME}")
     )
     await callback.answer()
 
@@ -128,7 +131,7 @@ async def accounts(callback: CallbackQuery):
         [InlineKeyboardButton(text="Индия", callback_data="country_india")],
         [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
     ])
-    await callback.message.edit_text("Выберите страну", reply_markup=kb)
+    await callback.message.edit_text(with_emoji("Выберите страну"), reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("country_"))
@@ -141,7 +144,7 @@ async def country(callback: CallbackQuery):
         [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
     ])
 
-    await callback.message.edit_text("Выберите оплату", reply_markup=kb)
+    await callback.message.edit_text(with_emoji("Выберите оплату"), reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_acc_star_"))
@@ -178,7 +181,7 @@ async def gifts(callback: CallbackQuery):
         for i, g in enumerate(gifts[:10])
     ] + [[InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]])
 
-    await callback.message.edit_text("Список подарков", reply_markup=kb)
+    await callback.message.edit_text(with_emoji("Список подарков"), reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("gift_"))
@@ -193,7 +196,7 @@ async def gift_detail(callback: CallbackQuery):
 
     await callback.message.answer_animation(
         animation=animation_url,
-        caption="Аренда 7 дней за 15 звезд",
+        caption=with_emoji("Аренда 7 дней за 15 звезд"),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Оплатить", callback_data=f"pay_{i}")]
         ])
@@ -222,7 +225,15 @@ async def pre_checkout(q: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def success(message: Message):
-    await message.answer("Оплата прошла успешно")
+    payload = message.successful_payment.invoice_payload
+
+    emoji = with_emoji("")
+
+    if payload.startswith("gift_"):
+        await message.answer(f"{emoji}Оплата прошла\nПодарок активирован")
+
+    elif payload.startswith("account_"):
+        await message.answer(f"{emoji}Оплата прошла\nАккаунт куплен")
 
 # ===== АДМИН =====
 @dp.callback_query(F.data == "admin_panel")
