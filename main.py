@@ -1,9 +1,7 @@
 import asyncio
 import logging
 import sqlite3
-import os
 import aiohttp
-import json
 
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
@@ -16,7 +14,8 @@ from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
 
-API_TOKEN = os.getenv("8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg")
+# ✅ ВСТАВЛЕН ТОКЕН ПРАВИЛЬНО
+API_TOKEN = "8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg"
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -114,7 +113,7 @@ async def start(message: Message):
         reply_markup=main_menu(message.from_user.id)
     )
 
-# ===== МЕНЮ =====
+# ===== НАЗАД =====
 @dp.callback_query(F.data == "back_to_menu")
 async def back(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -146,7 +145,6 @@ async def buy(callback: CallbackQuery):
         f"💰 Цена: {price} руб\n\n"
         f"📩 Напишите продавцу: @{SELLER_USERNAME}"
     )
-
     await callback.answer()
 
 # ===== АККАУНТЫ =====
@@ -205,7 +203,7 @@ async def gifts(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=gifts_kb(gifts))
     await callback.answer()
 
-# ===== ДЕТАЛИ ПОДАРКА =====
+# ===== ДЕТАЛИ ПОДАРКА (GIF) =====
 @dp.callback_query(F.data.startswith("gift_"))
 async def gift_detail(callback: CallbackQuery):
     gifts = dp.get("gifts", [])
@@ -230,7 +228,7 @@ async def gift_detail(callback: CallbackQuery):
 
     await callback.answer()
 
-# ===== ОПЛАТА =====
+# ===== ОПЛАТА ⭐ =====
 @dp.callback_query(F.data.startswith("pay_"))
 async def pay(callback: CallbackQuery):
     i = int(callback.data.split("_")[1])
