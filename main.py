@@ -3,14 +3,14 @@ import logging
 import sqlite3
 import os
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, LabeledPrice, PreCheckoutQuery, SuccessfulPayment
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-API_TOKEN = '8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg'
+API_TOKEN = 'ТВОЙ_ТОКЕН_БОТА'
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -25,6 +25,16 @@ cursor.execute('''
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
+    )
+''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        country TEXT,
+        payment_method TEXT,
+        status TEXT,
+        created_at TEXT
     )
 ''')
 conn.commit()
@@ -42,6 +52,11 @@ def get_setting(key):
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
+
+def save_order(user_id, country, payment_method):
+    cursor.execute('INSERT INTO orders (user_id, country, payment_method, status, created_at) VALUES (?, ?, ?, ?, ?)',
+                  (user_id, country, payment_method, "pending", str(asyncio.get_event_loop().time())))
+    conn.commit()
 
 def main_menu(user_id):
     admin_status = is_admin(user_id)
@@ -73,16 +88,17 @@ def accounts_menu_kb():
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Оплата звездами (30 звезд)", callback_data=f"buy_stars_account_{country}")],
-        [InlineKeyboardButton(text="Оплата рублями (40 руб)", callback_data=f"buy_rub_account_{country}")],
+        [InlineKeyboardButton(text="Оплатить 30 звезд", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="Оплатить рублями (40 руб)", callback_data=f"pay_rub_{country}")],
         [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
     ])
 
 def admin_panel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Фото для товара", callback_data="admin_set_photo")],
-        [InlineKeyboardButton(text="QR код для оплаты", callback_data="admin_set_qr")],
-        [InlineKeyboardButton(text="Ссылка для оплаты", callback_data="admin_set_link")],
+        [InlineKeyboardButton(text="QR код для руб.", callback_data="admin_set_qr")],
+        [InlineKeyboardButton(text="Ссылка для руб.", callback_data="admin_set_link")],
+        [InlineKeyboardButton(text="Заказы", callback_data="admin_orders")],
         [InlineKeyboardButton(text="Главное меню", callback_data="back_to_menu")]
     ])
 
@@ -133,8 +149,7 @@ async def buy_stars(callback: CallbackQuery):
                     [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
                 ])
             )
-        except Exception as e:
-            log.error(f"Ошибка: {e}")
+        except:
             await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Оплатить", url=payment_link)],
                 [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
@@ -160,52 +175,79 @@ async def choose_country(callback: CallbackQuery):
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
     await callback.message.edit_text(
-        f"{country_name}\n\nВыберите способ оплаты:",
+        f"{country_name}\n\nЦена: 30 звезд или 40 руб\n\nВыберите способ оплаты:",
         reply_markup=buy_account_kb(country)
     )
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_stars_account_"))
-async def buy_account_stars(callback: CallbackQuery):
-    country = callback.data.replace("buy_stars_account_", "")
+# ========== ОПЛАТА ЗВЕЗДАМИ (РЕАЛЬНАЯ) ==========
+@dp.callback_query(F.data.startswith("pay_stars_"))
+async def pay_with_stars(callback: CallbackQuery):
+    country = callback.data.replace("pay_stars_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    photo_path = get_setting("stars_photo")
-    payment_link = get_setting("payment_link") or "https://t.me/ваш_аккаунт"
-    text = f"Оплата аккаунта {country_name}\n\nЦена: 30 звезд\n\nНажмите на кнопку для оплаты"
-    
-    if photo_path and os.path.exists(photo_path):
-        try:
-            photo = FSInputFile(photo_path)
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Оплатить", url=payment_link)],
-                    [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-                ])
-            )
-        except Exception as e:
-            log.error(f"Ошибка: {e}")
-            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Оплатить", url=payment_link)],
-                [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-            ]))
-    else:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Оплатить", url=payment_link)],
-            [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-        ]))
+    await callback.message.answer_invoice(
+        title=f"Аккаунт {country_name}",
+        description=f"Покупка аккаунта {country_name}",
+        payload=f"account_{country}",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label=f"{country_name} аккаунт", amount=30)],
+        start_parameter="account_payment"
+    )
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_rub_account_"))
-async def buy_account_rub(callback: CallbackQuery):
-    country = callback.data.replace("buy_rub_account_", "")
+@dp.pre_checkout_query()
+async def pre_checkout_query(pre_checkout: PreCheckoutQuery):
+    await pre_checkout.answer(ok=True)
+
+@dp.message(F.successful_payment)
+async def successful_payment(message: Message):
+    user_id = message.from_user.id
+    payment = message.successful_payment
+    payload = payment.invoice_payload
+    
+    if payload.startswith("account_"):
+        country = payload.replace("account_", "")
+        country_name = "Индонезия" if country == "indonesia" else "Индия"
+        
+        save_order(user_id, country_name, "stars")
+        
+        await message.answer(
+            f"✅ Оплата прошла успешно!\n\n"
+            f"Аккаунт {country_name} будет отправлен в течение 5 минут.\n"
+            f"Спасибо за покупку!"
+        )
+        
+        for admin_id in ADMIN_IDS:
+            await bot.send_message(
+                admin_id,
+                f"🆕 Новый заказ!\n"
+                f"Пользователь: {message.from_user.first_name}\n"
+                f"ID: {user_id}\n"
+                f"Товар: Аккаунт {country_name}\n"
+                f"Оплата: 30 звезд"
+            )
+    else:
+        stars = int(payload.split("_")[1])
+        await message.answer(f"✅ Оплачено {stars} звезд!\n\nСпасибо за покупку!")
+
+# ========== ОПЛАТА РУБЛЯМИ ==========
+@dp.callback_query(F.data.startswith("pay_rub_"))
+async def pay_with_rub(callback: CallbackQuery):
+    country = callback.data.replace("pay_rub_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
+    save_order(callback.from_user.id, country_name, "rub")
+    
     qr_path = get_setting("qr_photo")
-    text = f"Оплата аккаунта {country_name}\n\nЦена: 40 руб\n\nОплатите по QR коду"
+    payment_link = get_setting("payment_link") or "https://t.me/ваш_аккаунт"
+    text = f"Оплата аккаунта {country_name}\n\nЦена: 40 руб\n\nСпособ оплаты:"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Оплатить по ссылке", url=payment_link)],
+        [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
+    ])
     
     if qr_path and os.path.exists(qr_path):
         try:
@@ -214,21 +256,15 @@ async def buy_account_rub(callback: CallbackQuery):
             await callback.message.answer_photo(
                 photo=qr,
                 caption=text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-                ])
+                reply_markup=kb
             )
-        except Exception as e:
-            log.error(f"Ошибка: {e}")
-            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-            ]))
+        except:
+            await callback.message.edit_text(text, reply_markup=kb)
     else:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-        ]))
+        await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
+# ========== АДМИН ПАНЕЛЬ ==========
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -242,7 +278,7 @@ async def admin_set_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("Отправьте фото для товара")
+    await callback.message.answer("Отправьте фото для товара (звезды)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_set_qr")
@@ -258,7 +294,23 @@ async def admin_set_link(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("Отправьте ссылку для оплаты")
+    await callback.message.answer("Отправьте ссылку для оплаты рублями")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_orders")
+async def admin_orders(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    cursor.execute('SELECT * FROM orders ORDER BY id DESC LIMIT 20')
+    orders = cursor.fetchall()
+    if not orders:
+        await callback.message.answer("Нет заказов")
+    else:
+        text = "📋 Последние заказы:\n\n"
+        for order in orders:
+            text += f"#{order[0]} | {order[2]} | {order[3]} | {order[5]}\n"
+        await callback.message.answer(text)
     await callback.answer()
 
 @dp.message(F.photo)
