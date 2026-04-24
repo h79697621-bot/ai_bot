@@ -89,8 +89,8 @@ def accounts_menu_kb():
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Купить звездами (30 звезд)", callback_data=f"pay_stars_{country}")],
-        [InlineKeyboardButton(text="Купить рублями (40 руб)", callback_data=f"pay_rub_{country}")],
+        [InlineKeyboardButton(text="Купить звездами", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="Купить рублями", callback_data=f"pay_rub_{country}")],
         [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
     ])
 
