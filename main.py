@@ -10,7 +10,7 @@ from aiogram.filters import Command
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-API_TOKEN = 'ТВОЙ_ТОКЕН_БОТА'
+API_TOKEN = '8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg'
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
