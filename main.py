@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import sqlite3
+import os
 import aiohttp
+import json
 
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
@@ -14,8 +16,7 @@ from aiogram.filters import Command
 
 logging.basicConfig(level=logging.INFO)
 
-# ВСТАВЬ СЮДА ТОКЕН НАПРЯМУЮ
-API_TOKEN = "8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg"
+API_TOKEN = os.getenv("8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg")
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -35,28 +36,11 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TEXT
 )
 ''')
-
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-)
-''')
-
 conn.commit()
-
-def set_setting(key, value):
-    cursor.execute('INSERT OR REPLACE INTO settings VALUES (?, ?)', (key, value))
-    conn.commit()
-
-def get_setting(key):
-    cursor.execute('SELECT value FROM settings WHERE key=?', (key,))
-    row = cursor.fetchone()
-    return row[0] if row else None
 
 def save_order(user_id, item_type, item_name, payment_method):
     cursor.execute(
-        'INSERT INTO orders VALUES (NULL,?,?,?,?,?,?)',
+        'INSERT INTO orders (user_id, item_type, item_name, payment_method, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
         (user_id, item_type, item_name, payment_method, "paid",
          datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     )
@@ -65,18 +49,11 @@ def save_order(user_id, item_type, item_name, payment_method):
 # ===== НАСТРОЙКИ =====
 ADMIN_IDS = [8364328997]
 SELLER_USERNAME = "vorrxy"
-waiting_for_emoji = set()
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
-def with_emoji(text):
-    emoji_id = get_setting("welcome_emoji")
-    if emoji_id:
-        return f"<tg-emoji emoji-id='{emoji_id}'></tg-emoji> " + text
-    return text
-
-# ===== МЕНЮ =====
+# ===== КНОПКИ =====
 def main_menu(user_id):
     kb = [
         [InlineKeyboardButton(text="Купить звезды", callback_data="stars_menu")],
@@ -87,11 +64,53 @@ def main_menu(user_id):
         kb.append([InlineKeyboardButton(text="Админ панель", callback_data="admin_panel")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
+def stars_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="50 звезд (65 руб)", callback_data="buy_50")],
+        [InlineKeyboardButton(text="100 звезд (130 руб)", callback_data="buy_100")],
+        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
+    ])
+
+def accounts_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Индонезия", callback_data="country_indonesia")],
+        [InlineKeyboardButton(text="Индия", callback_data="country_india")],
+        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
+    ])
+
+def gifts_kb(gifts):
+    buttons = []
+    for i, g in enumerate(gifts[:10]):
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"Подарок {g.get('name','')}",
+                callback_data=f"gift_{i}"
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="back_to_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def gift_detail_kb(i):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Оплатить 15", callback_data=f"pay_{i}")],
+        [InlineKeyboardButton(text="Назад", callback_data="gifts_menu")]
+    ])
+
+# ===== API ПОДАРКОВ =====
+async def get_gifts():
+    url = f"https://api.telegram.org/bot{API_TOKEN}/getStarGiftOptions"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
+            if data.get("ok"):
+                return data["result"]
+    return []
+
 # ===== СТАРТ =====
 @dp.message(Command("start"))
 async def start(message: Message):
     await message.answer(
-        with_emoji(f"Здравствуйте, {message.from_user.first_name}!"),
+        f"Здравствуйте, {message.from_user.first_name}!",
         reply_markup=main_menu(message.from_user.id)
     )
 
@@ -99,7 +118,7 @@ async def start(message: Message):
 @dp.callback_query(F.data == "back_to_menu")
 async def back(callback: CallbackQuery):
     await callback.message.edit_text(
-        with_emoji(f"Здравствуйте, {callback.from_user.first_name}!"),
+        f"Здравствуйте, {callback.from_user.first_name}!",
         reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
@@ -107,81 +126,69 @@ async def back(callback: CallbackQuery):
 # ===== ЗВЕЗДЫ =====
 @dp.callback_query(F.data == "stars_menu")
 async def stars(callback: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="50 (65 руб)", callback_data="buy_50")],
-        [InlineKeyboardButton(text="100 (130 руб)", callback_data="buy_100")],
-        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
-    ])
-    await callback.message.edit_text(with_emoji("Выберите количество"), reply_markup=kb)
+    await callback.message.edit_text(
+        "Выберите количество:",
+        reply_markup=stars_menu_kb()
+    )
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy(callback: CallbackQuery):
-    stars = callback.data.split("_")[1]
     await callback.message.edit_text(
-        with_emoji(f"Покупка {stars} звезд\nСвязь: @{SELLER_USERNAME}")
+        f"Свяжитесь с продавцом: @{SELLER_USERNAME}"
     )
     await callback.answer()
 
 # ===== АККАУНТЫ =====
 @dp.callback_query(F.data == "accounts_menu")
 async def accounts(callback: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Индонезия", callback_data="country_indonesia")],
-        [InlineKeyboardButton(text="Индия", callback_data="country_india")],
-        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
-    ])
-    await callback.message.edit_text(with_emoji("Выберите страну"), reply_markup=kb)
+    await callback.message.edit_text(
+        "Выберите страну:",
+        reply_markup=accounts_menu_kb()
+    )
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("country_"))
 async def country(callback: CallbackQuery):
     country = callback.data.split("_")[1]
+    name = "Индонезия" if country == "indonesia" else "Индия"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Купить за 40 руб", callback_data=f"buy_acc_rub_{country}")],
-        [InlineKeyboardButton(text="Купить за 30 звезд", callback_data=f"buy_acc_star_{country}")],
+        [InlineKeyboardButton(text="Купить (40 руб)", callback_data=f"buy_acc_{country}")],
         [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
     ])
 
-    await callback.message.edit_text(with_emoji("Выберите оплату"), reply_markup=kb)
+    await callback.message.edit_text(f"{name}", reply_markup=kb)
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("buy_acc_star_"))
-async def buy_acc_star(callback: CallbackQuery):
-    country = callback.data.split("_")[3]
+@dp.callback_query(F.data.startswith("buy_acc_"))
+async def buy_account(callback: CallbackQuery):
+    country = callback.data.split("_")[2]
+    name = "Индонезия" if country == "indonesia" else "Индия"
 
-    prices = [LabeledPrice(label="Аккаунт", amount=30)]
+    save_order(callback.from_user.id, "account", name, "rub")
 
-    await bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title="Покупка аккаунта",
-        description="Доступ",
-        payload=f"account_{country}",
-        currency="XTR",
-        prices=prices,
-        provider_token=""
+    await callback.message.edit_text(
+        f"Заказ оформлен\nСвязь: @{SELLER_USERNAME}"
     )
+    await callback.answer()
 
 # ===== ПОДАРКИ =====
-async def get_gifts():
-    url = f"https://api.telegram.org/bot{API_TOKEN}/getStarGiftOptions"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            data = await resp.json()
-            return data.get("result", [])
-
 @dp.callback_query(F.data == "gifts_menu")
 async def gifts(callback: CallbackQuery):
+    await callback.message.edit_text("Загрузка...")
     gifts = await get_gifts()
+
+    if not gifts:
+        await callback.message.edit_text("Ошибка")
+        return
+
     dp["gifts"] = gifts
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=g.get("name"), callback_data=f"gift_{i}")]
-        for i, g in enumerate(gifts[:10])
-    ] + [[InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]])
-
-    await callback.message.edit_text(with_emoji("Список подарков"), reply_markup=kb)
+    await callback.message.edit_text(
+        "Список подарков",
+        reply_markup=gifts_kb(gifts)
+    )
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("gift_"))
@@ -194,13 +201,19 @@ async def gift_detail(callback: CallbackQuery):
 
     await callback.message.delete()
 
-    await callback.message.answer_animation(
-        animation=animation_url,
-        caption=with_emoji("Аренда 7 дней за 15 звезд"),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Оплатить", callback_data=f"pay_{i}")]
-        ])
-    )
+    if animation_url:
+        await callback.message.answer_animation(
+            animation=animation_url,
+            caption="Аренда 7 дней за 15",
+            reply_markup=gift_detail_kb(i)
+        )
+    else:
+        await callback.message.answer(
+            "Аренда 7 дней за 15",
+            reply_markup=gift_detail_kb(i)
+        )
+
+    await callback.answer()
 
 # ===== ОПЛАТА =====
 @dp.callback_query(F.data.startswith("pay_"))
@@ -219,47 +232,15 @@ async def pay(callback: CallbackQuery):
         provider_token=""
     )
 
+    await callback.answer()
+
 @dp.pre_checkout_query()
 async def pre_checkout(q: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(q.id, ok=True)
 
 @dp.message(F.successful_payment)
 async def success(message: Message):
-    payload = message.successful_payment.invoice_payload
-
-    emoji = with_emoji("")
-
-    if payload.startswith("gift_"):
-        await message.answer(f"{emoji}Оплата прошла\nПодарок активирован")
-
-    elif payload.startswith("account_"):
-        await message.answer(f"{emoji}Оплата прошла\nАккаунт куплен")
-
-# ===== АДМИН =====
-@dp.callback_query(F.data == "admin_panel")
-async def admin(callback: CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Установить эмодзи", callback_data="set_emoji")],
-        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
-    ])
-    await callback.message.edit_text("Админ панель", reply_markup=kb)
-
-@dp.callback_query(F.data == "set_emoji")
-async def set_emoji(callback: CallbackQuery):
-    waiting_for_emoji.add(callback.from_user.id)
-    await callback.message.answer("Отправь премиум эмодзи")
-
-@dp.message(F.entities)
-async def save_emoji(message: Message):
-    if message.from_user.id not in waiting_for_emoji:
-        return
-
-    for e in message.entities:
-        if e.type == "custom_emoji":
-            set_setting("welcome_emoji", e.custom_emoji_id)
-            waiting_for_emoji.remove(message.from_user.id)
-            await message.answer("Сохранено")
-            return
+    await message.answer("Оплата прошла")
 
 # ===== ЗАПУСК =====
 async def main():
