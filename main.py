@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sqlite3
+import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
 from aiogram.client.bot import DefaultBotProperties
@@ -13,6 +14,10 @@ API_TOKEN = '8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg'
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
+
+# Создаём папку для фото
+PHOTO_DIR = "photos"
+os.makedirs(PHOTO_DIR, exist_ok=True)
 
 conn = sqlite3.connect('shop_bot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -116,7 +121,7 @@ async def buy_stars(callback: CallbackQuery):
     text = f"Покупка {stars} звезд\n\nЦена: {price} руб\n\nНажмите на кнопку для оплаты"
     payment_link = get_setting("payment_link") or "https://t.me/ваш_аккаунт"
     
-    if photo_path:
+    if photo_path and os.path.exists(photo_path):
         try:
             photo = FSInputFile(photo_path)
             await callback.message.delete()
@@ -128,7 +133,8 @@ async def buy_stars(callback: CallbackQuery):
                     [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
                 ])
             )
-        except:
+        except Exception as e:
+            log.error(f"Ошибка отправки фото: {e}")
             await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Оплатить", url=payment_link)],
                 [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
@@ -168,7 +174,7 @@ async def buy_account_stars(callback: CallbackQuery):
     payment_link = get_setting("payment_link") or "https://t.me/ваш_аккаунт"
     text = f"Оплата аккаунта {country_name}\n\nЦена: 30 звезд\n\nНажмите на кнопку для оплаты"
     
-    if photo_path:
+    if photo_path and os.path.exists(photo_path):
         try:
             photo = FSInputFile(photo_path)
             await callback.message.delete()
@@ -180,7 +186,8 @@ async def buy_account_stars(callback: CallbackQuery):
                     [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
                 ])
             )
-        except:
+        except Exception as e:
+            log.error(f"Ошибка отправки фото: {e}")
             await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Оплатить", url=payment_link)],
                 [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
@@ -200,7 +207,7 @@ async def buy_account_rub(callback: CallbackQuery):
     qr_path = get_setting("qr_photo")
     text = f"Оплата аккаунта {country_name}\n\nЦена: 40 руб\n\nОплатите по QR коду"
     
-    if qr_path:
+    if qr_path and os.path.exists(qr_path):
         try:
             qr = FSInputFile(qr_path)
             await callback.message.delete()
@@ -211,7 +218,8 @@ async def buy_account_rub(callback: CallbackQuery):
                     [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
                 ])
             )
-        except:
+        except Exception as e:
+            log.error(f"Ошибка отправки QR: {e}")
             await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
             ]))
@@ -248,18 +256,32 @@ async def admin_set_qr(callback: CallbackQuery):
 @dp.message(F.photo)
 async def save_photo(message: Message):
     if not is_admin(message.from_user.id):
+        await message.answer("У вас нет прав администратора")
         return
+    
     file_id = message.photo[-1].file_id
     file = await bot.get_file(file_id)
-    file_path = f"photos/{file_id}.jpg"
+    
+    # Сохраняем с уникальным именем
+    timestamp = int(asyncio.get_event_loop().time())
+    file_path = os.path.join(PHOTO_DIR, f"{timestamp}.jpg")
     await bot.download_file(file.file_path, file_path)
     
-    if "qr" in message.caption.lower() if message.caption else "":
+    caption = message.caption.lower() if message.caption else ""
+    
+    if "qr" in caption:
         set_setting("qr_photo", file_path)
-        await message.answer("QR код сохранен!")
+        await message.answer("✅ QR код сохранен!")
     else:
         set_setting("stars_photo", file_path)
-        await message.answer("Фото для товара сохранено!")
+        await message.answer("✅ Фото для товара сохранено!")
+
+@dp.message(Command("admin"))
+async def admin_cmd(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("Нет доступа")
+        return
+    await message.answer("Админ-панель", reply_markup=admin_panel_kb())
 
 async def main():
     try:
