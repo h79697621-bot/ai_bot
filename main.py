@@ -45,6 +45,9 @@ conn.commit()
 ADMIN_IDS = [8364328997]
 SELLER_USERNAME = "vorrxy"
 PREMIUM_EMOJI_ID = "5348370156340933254"
+PHONE_NUMBER = "+79155613790"
+BANK_NAME = "Сбербанк"
+PAYMENT_LINK = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79155613790&bankCode=100000000111"
 
 def set_setting(key, value):
     cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
@@ -89,22 +92,6 @@ async def send_message_safe(message, text, photo_key, reply_markup):
     else:
         await message.answer(final_text, reply_markup=reply_markup, parse_mode="HTML")
 
-async def send_invoice_message(message, title, description, payload, amount):
-    try:
-        await message.delete()
-    except:
-        pass
-    
-    await message.answer_invoice(
-        title=title,
-        description=description,
-        payload=payload,
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice(label=title, amount=amount)],
-        start_parameter=f"buy_{payload}"
-    )
-
 def main_menu_kb(user_id):
     admin_status = is_admin(user_id)
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -135,8 +122,8 @@ def accounts_menu_kb():
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Оплатить звездами (30⭐)", callback_data=f"pay_stars_{country}")],
-        [InlineKeyboardButton(text="💳 Оплатить рублями (40₽)", callback_data=f"pay_rub_{country}")],
+        [InlineKeyboardButton(text="⭐ Оплатить звездами", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="💳 Оплатить рублями", callback_data=f"pay_rub_{country}")],
         [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
     ])
 
@@ -180,7 +167,7 @@ async def back_to_menu(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "stars_menu")
 async def stars_menu(callback: CallbackQuery):
-    text = "Курс: 1⭐ = 1.3₽\n\nВыберите количество:"
+    text = "Выберите количество:"
     
     await send_message_safe(
         message=callback.message,
@@ -196,14 +183,17 @@ async def buy_stars(callback: CallbackQuery):
     prices = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}
     price = prices.get(stars, 0)
     
-    text = f"Покупка {stars} звезд\n\n💰 Цена: {price}₽\n\n📩 По вопросам оплаты: @{SELLER_USERNAME}"
+    text = f"💳 Счет на оплату\n\n"
+    text += f"Товар: {stars} звезд\n"
+    text += f"Сумма к оплате: {price}₽\n\n"
+    text += f"🔗 Ссылка для оплаты:\n{PAYMENT_LINK}"
     
     await send_message_safe(
         message=callback.message,
         text=text,
         photo_key="stars_photo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="💳 Оплатить", url=PAYMENT_LINK)],
             [InlineKeyboardButton(text="◀ Назад", callback_data="stars_menu")]
         ])
     )
@@ -211,7 +201,7 @@ async def buy_stars(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "accounts_menu")
 async def accounts_menu(callback: CallbackQuery):
-    text = "🌍 Выберите страну:"
+    text = "Выберите страну:"
     
     await send_message_safe(
         message=callback.message,
@@ -226,7 +216,7 @@ async def choose_country(callback: CallbackQuery):
     country = callback.data.split("_")[1]
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    text = f"{country_name}\n\n⭐ Цена: 30 звезд\n💳 Цена: 40₽\n\nВыберите способ оплаты:"
+    text = f"{country_name}\n\nВыберите способ оплаты:"
     
     await send_message_safe(
         message=callback.message,
@@ -241,13 +231,19 @@ async def pay_account_stars(callback: CallbackQuery):
     country = callback.data.replace("pay_stars_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    await send_invoice_message(
-        message=callback.message,
+    await callback.message.answer_invoice(
         title=f"Аккаунт {country_name}",
         description=f"Покупка аккаунта {country_name}",
         payload=f"account_{country}",
-        amount=30
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label=f"Аккаунт {country_name}", amount=30)],
+        start_parameter=f"buy_account_{country}"
     )
+    try:
+        await callback.message.delete()
+    except:
+        pass
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("pay_rub_"))
@@ -256,14 +252,11 @@ async def pay_account_rub(callback: CallbackQuery):
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
     amount = 40
-    payment_link = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79155613790&bankCode=100000000111"
     
     text = f"💳 Счет на оплату\n\n"
     text += f"Товар: Аккаунт {country_name}\n"
     text += f"Сумма к оплате: {amount}₽\n\n"
-    text += f"🏦 Банк: Втб\n\n"
-    text += f"🔗 Ссылка для оплаты:\n{payment_link}\n\n"
-    text += f"📩 После оплаты отправьте чек сюда: @{SELLER_USERNAME}"
+    text += f"🔗 Ссылка для оплаты:\n{PAYMENT_LINK}"
     
     save_order(callback.from_user.id, "account", country_name, "rub", amount)
     
@@ -272,8 +265,7 @@ async def pay_account_rub(callback: CallbackQuery):
         text=text,
         photo_key="accounts_photo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить", url=payment_link)],
-            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="💳 Оплатить", url=PAYMENT_LINK)],
             [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
         ])
     )
