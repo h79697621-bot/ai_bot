@@ -11,7 +11,7 @@ from aiogram.filters import Command
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-API_TOKEN = '8799124007:AAGus3HI7KaBbLNPxdB_TA99KYjtQmiNaws'
+API_TOKEN = '8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg'
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -48,12 +48,13 @@ cursor.execute('''
 ''')
 conn.commit()
 
-ADMIN_IDS = [8364328997,8318310777]
+ADMIN_IDS = [8364328997]
 SELLER_USERNAME = "vorrxy"
 PREMIUM_EMOJI_ID = "5348370156340933254"
 PHONE_NUMBER = "+79155613790"
 BANK_NAME = "Sberbank"
 PAYMENT_LINK = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79155613790&bankCode=100000000111"
+REVIEWS_LINK = "https://t.me/grettpo"
 
 def set_setting(key, value):
     cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
@@ -98,12 +99,14 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Покупка аккаунта {country}",
             "buy_account_rub_title": "💳 Счет на оплату\n\nТовар: Аккаунт {country}\nСумма к оплате: {amount}₽\n\n🔗 Ссылка для оплаты:\n{link}",
             "payment_success": "✅ Оплата прошла успешно!\n\nАккаунт {country} будет отправлен в течение 5 минут.\nСпасибо за покупку!",
-            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\nЕсли что-то пошло не так, обратитесь к владельцу: @{owner}",
+            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения \n\ @{owner}",
             "lang_changed": "🌐 Язык изменен на русский",
             "lang_changed_en": "🌐 Language changed to English",
             "buy_stars": "Купить звезды",
             "accounts": "Аккаунты",
             "info": "Информация",
+            "reviews": "📢 Отзывы",
+            "write_seller": "📩 Написать продавцу",
             "admin_panel": "Админ панель",
             "back": "◀ Главное меню",
             "back_btn": "◀ Назад",
@@ -123,12 +126,14 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Purchase of account {country}",
             "buy_account_rub_title": "💳 Payment invoice\n\nProduct: Account {country}\nAmount to pay: {amount}₽\n\n🔗 Payment link:\n{link}",
             "payment_success": "✅ Payment successful!\n\nAccount {country} will be sent within 5 minutes.\nThank you for your purchase!",
-            "info_text": "ℹ️ Store Information\n\n📦 We sell accounts and Telegram stars\n\nIf something goes wrong, contact the owner: @{owner}",
+            "info_text": "ℹ️ Store Information\n\n📦 We sell accounts and Telegram stars\n\n💳 After payment, send a screenshot of the receipt in a personal message and indicate what you bought.\n\n👨‍💼 Owner: @{owner}",
             "lang_changed": "🌐 Language changed to English",
             "lang_changed_ru": "🌐 Язык изменен на русский",
             "buy_stars": "Buy stars",
             "accounts": "Accounts",
             "info": "Info",
+            "reviews": "📢 Reviews",
+            "write_seller": "📩 Contact seller",
             "admin_panel": "Admin panel",
             "back": "◀ Main menu",
             "back_btn": "◀ Back",
@@ -284,13 +289,17 @@ async def info_menu(callback: CallbackQuery):
     
     text = get_text(lang, "info_text", owner=SELLER_USERNAME)
     
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text(lang, "write_seller"), url=f"https://t.me/{SELLER_USERNAME}")],
+        [InlineKeyboardButton(text=get_text(lang, "reviews"), url=REVIEWS_LINK)],
+        [InlineKeyboardButton(text=get_text(lang, "back"), callback_data="back_to_menu")]
+    ])
+    
     await send_message_safe(
         message=callback.message,
         text=text,
         photo_key="welcome_photo",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=get_text(lang, "back"), callback_data="back_to_menu")]
-        ])
+        reply_markup=kb
     )
     await callback.answer()
 
