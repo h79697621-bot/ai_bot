@@ -4,7 +4,7 @@ import sqlite3
 import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, LabeledPrice, PreCheckoutQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
 
@@ -42,6 +42,7 @@ cursor.execute('''
 conn.commit()
 
 ADMIN_IDS = [8364328997]
+SELLER_USERNAME = "vorrxy"
 
 def set_setting(key, value):
     cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
@@ -61,7 +62,6 @@ def save_order(user_id, item_type, item_name, payment_method):
     conn.commit()
 
 async def send_message_safe(message, text, photo_key, reply_markup):
-    """Безопасная отправка сообщения - удаляем только если есть что удалять"""
     photo_path = get_setting(photo_key)
     
     try:
@@ -96,12 +96,12 @@ def main_menu_kb(user_id):
 
 def stars_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="50⭐ (65₽)", callback_data="buy_50")],
-        [InlineKeyboardButton(text="100⭐ (130₽)", callback_data="buy_100")],
-        [InlineKeyboardButton(text="200⭐ (260₽)", callback_data="buy_200")],
-        [InlineKeyboardButton(text="300⭐ (390₽)", callback_data="buy_300")],
-        [InlineKeyboardButton(text="400⭐ (520₽)", callback_data="buy_400")],
-        [InlineKeyboardButton(text="500⭐ (650₽)", callback_data="buy_500")],
+        [InlineKeyboardButton(text="50⭐", callback_data="buy_50")],
+        [InlineKeyboardButton(text="100⭐", callback_data="buy_100")],
+        [InlineKeyboardButton(text="200⭐", callback_data="buy_200")],
+        [InlineKeyboardButton(text="300⭐", callback_data="buy_300")],
+        [InlineKeyboardButton(text="400⭐", callback_data="buy_400")],
+        [InlineKeyboardButton(text="500⭐", callback_data="buy_500")],
         [InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu")]
     ])
 
@@ -131,7 +131,7 @@ def admin_panel_kb():
 async def start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
-    text = f"Здравствуйте, {username}!\n\nДобро пожаловать в магазин!"
+    text = f"Здравствуйте, {username}!\n\nДобро пожаловать в магазин!\n\nКурс: 1⭐ = 1.3₽"
     
     await send_message_safe(
         message=message,
@@ -143,7 +143,7 @@ async def start(message: Message):
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
-    text = f"Здравствуйте, {callback.from_user.first_name}!\n\nВыберите раздел:"
+    text = f"Здравствуйте, {callback.from_user.first_name}!\n\nКурс: 1⭐ = 1.3₽"
     
     await send_message_safe(
         message=callback.message,
@@ -168,20 +168,18 @@ async def stars_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy_stars(callback: CallbackQuery):
     stars = callback.data.split("_")[1]
+    price = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}[stars]
     
-    try:
-        await callback.message.delete()
-    except:
-        pass
+    text = f"Покупка {stars} звезд\n\nЦена: {price}₽\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
     
-    await callback.message.answer_invoice(
-        title=f"{stars} звезд",
-        description=f"Покупка {stars} звезд",
-        payload=f"stars_{stars}",
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice(label=f"{stars} звезд", amount=int(stars))],
-        start_parameter=f"buy_stars_{stars}"
+    await send_message_safe(
+        message=callback.message,
+        text=text,
+        photo_key="stars_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="◀ Назад", callback_data="stars_menu")]
+        ])
     )
     await callback.answer()
 
@@ -216,61 +214,18 @@ async def pay_account_stars(callback: CallbackQuery):
     country = callback.data.replace("pay_stars_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    try:
-        await callback.message.delete()
-    except:
-        pass
+    text = f"Оплата аккаунта {country_name}\n\nЦена: 30⭐\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
     
-    await callback.message.answer_invoice(
-        title=f"Аккаунт {country_name}",
-        description=f"Покупка аккаунта {country_name}",
-        payload=f"account_{country}",
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice(label=f"Аккаунт {country_name}", amount=30)],
-        start_parameter=f"buy_account_{country}"
+    await send_message_safe(
+        message=callback.message,
+        text=text,
+        photo_key="accounts_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
+        ])
     )
     await callback.answer()
-
-@dp.pre_checkout_query()
-async def pre_checkout(pre_checkout: PreCheckoutQuery):
-    await pre_checkout.answer(ok=True)
-
-@dp.message(F.successful_payment)
-async def successful_payment(message: Message):
-    user_id = message.from_user.id
-    payment = message.successful_payment
-    payload = payment.invoice_payload
-    stars = payment.total_amount
-    
-    if payload.startswith("stars_"):
-        await message.answer(
-            f"✅ Оплачено {stars} звезд!\n\nСпасибо за покупку!",
-            reply_markup=main_menu_kb(user_id)
-        )
-    
-    elif payload.startswith("account_"):
-        country = payload.replace("account_", "")
-        country_name = "Индонезия" if country == "indonesia" else "Индия"
-        
-        save_order(user_id, "account", country_name, "stars")
-        
-        for admin_id in ADMIN_IDS:
-            await bot.send_message(
-                admin_id,
-                f"🆕 Новый заказ!\n\n"
-                f"Пользователь: {message.from_user.first_name}\n"
-                f"ID: {user_id}\n"
-                f"Товар: Аккаунт {country_name}\n"
-                f"Оплата: {stars} звезд"
-            )
-        
-        await message.answer(
-            f"✅ Оплата прошла успешно!\n\n"
-            f"Аккаунт {country_name} будет отправлен в течение 5 минут.\n"
-            f"Спасибо за покупку!",
-            reply_markup=main_menu_kb(user_id)
-        )
 
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
