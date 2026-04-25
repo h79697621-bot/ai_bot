@@ -11,7 +11,7 @@ from aiogram.filters import Command
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-API_TOKEN = '8614544546:AAEiDB080jmjjYQPRsongRt2UcelwUw7heg'
+API_TOKEN = '8799124007:AAGus3HI7KaBbLNPxdB_TA99KYjtQmiNaws'
 
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
@@ -48,7 +48,7 @@ cursor.execute('''
 ''')
 conn.commit()
 
-ADMIN_IDS = [8364328997]
+ADMIN_IDS = [8364328997 , 8318310777]
 SELLER_USERNAME = "vorrxy"
 PREMIUM_EMOJI_ID = "5348370156340933254"
 PHONE_NUMBER = "+79155613790"
