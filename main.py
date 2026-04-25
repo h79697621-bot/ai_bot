@@ -99,7 +99,7 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Покупка аккаунта {country}",
             "buy_account_rub_title": "💳 Счет на оплату\n\nТовар: Аккаунт {country}\nСумма к оплате: {amount}₽\n\n🔗 Ссылка для оплаты:\n{link}",
             "payment_success": "✅ Оплата прошла успешно!\n\nАккаунт {country} будет отправлен в течение 5 минут.\nСпасибо за покупку!",
-            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения \n @{owner}",
+            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения \n
             "lang_changed": "🌐 Язык изменен на русский",
             "lang_changed_en": "🌐 Language changed to English",
             "buy_stars": "Купить звезды",
