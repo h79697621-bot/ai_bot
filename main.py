@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import os
 from datetime import datetime
-from aiogram import Bot, Dispatcher, F, types
+from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, LabeledPrice, PreCheckoutQuery
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
@@ -107,7 +107,7 @@ def get_text(lang, key, **kwargs):
         "ru": {
             "welcome": "Здравствуйте, {username}!\n\nВыберите действие:",
             "stars_menu": "Выберите количество:",
-            "accounts_menu": "Выберите страну:",
+            "accounts_menu": "Заказать аккаунт под заказ можете тут\n\n👇 Нажмите на кнопку ниже:",
             "choose_payment": "Выберите способ оплаты:",
             "buy_stars_title": "💳 Счет на оплату\n\nТовар: {stars} звезд\nСумма к оплате: {price}₽\n\n🔗 Ссылка для оплаты:\n{link}",
             "buy_account_stars_title": "Аккаунт {country}",
@@ -141,7 +141,7 @@ def get_text(lang, key, **kwargs):
         "en": {
             "welcome": "Hello, {username}!\n\nChoose an action:",
             "stars_menu": "Select quantity:",
-            "accounts_menu": "Select country:",
+            "accounts_menu": "You can order an account on demand here\n\n👇 Click the button below:",
             "choose_payment": "Select payment method:",
             "buy_stars_title": "💳 Payment invoice\n\nProduct: {stars} stars\nAmount to pay: {price}₽\n\n🔗 Payment link:\n{link}",
             "buy_account_stars_title": "Account {country}",
@@ -231,11 +231,11 @@ def stars_menu_kb(user_id):
 
 def accounts_menu_kb(user_id):
     lang = get_language(user_id)
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_text(lang, "indonesia"), callback_data="country_indonesia")],
-        [InlineKeyboardButton(text=get_text(lang, "india"), callback_data="country_india")],
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text(lang, "write_seller"), url=f"https://t.me/{SELLER_USERNAME}")],
         [InlineKeyboardButton(text=get_text(lang, "back"), callback_data="back_to_menu")]
     ])
+    return kb
 
 def buy_account_kb(user_id, country):
     lang = get_language(user_id)
@@ -390,109 +390,6 @@ async def accounts_menu(callback: CallbackQuery):
         reply_markup=accounts_menu_kb(user_id)
     )
     await callback.answer()
-
-@dp.callback_query(F.data.startswith("country_"))
-async def choose_country(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    lang = get_language(user_id)
-    country = callback.data.split("_")[1]
-    country_name = "Индонезия" if country == "indonesia" else "Индия"
-    
-    text = f"{country_name}\n\n{get_text(lang, 'choose_payment')}"
-    
-    await send_message_safe(
-        message=callback.message,
-        text=text,
-        photo_key="accounts_photo",
-        reply_markup=buy_account_kb(user_id, country)
-    )
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("pay_stars_"))
-async def pay_account_stars(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    lang = get_language(user_id)
-    country = callback.data.replace("pay_stars_", "")
-    country_name = "Индонезия" if country == "indonesia" else "Индия"
-    
-    title = get_text(lang, "buy_account_stars_title", country=country_name)
-    description = get_text(lang, "buy_account_stars_desc", country=country_name)
-    
-    await callback.message.answer_invoice(
-        title=title,
-        description=description,
-        payload=f"account_{country}",
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice(label=title, amount=30)],
-        start_parameter=f"buy_account_{country}"
-    )
-    try:
-        await callback.message.delete()
-    except:
-        pass
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("pay_rub_"))
-async def pay_account_rub(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    lang = get_language(user_id)
-    country = callback.data.replace("pay_rub_", "")
-    country_name = "Индонезия" if country == "indonesia" else "Индия"
-    
-    amount = 40
-    
-    text = get_text(lang, "buy_account_rub_title", country=country_name, amount=amount, link=PAYMENT_LINK)
-    
-    save_order(user_id, "account", country_name, "rub", amount)
-    
-    await send_message_safe(
-        message=callback.message,
-        text=text,
-        photo_key="accounts_photo",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить", url=PAYMENT_LINK)],
-            [InlineKeyboardButton(text=get_text(lang, "back_btn"), callback_data="accounts_menu")]
-        ])
-    )
-    await callback.answer()
-
-@dp.pre_checkout_query()
-async def pre_checkout(pre_checkout: PreCheckoutQuery):
-    await pre_checkout.answer(ok=True)
-
-@dp.message(F.successful_payment)
-async def successful_payment(message: Message):
-    user_id = message.from_user.id
-    lang = get_language(user_id)
-    payment = message.successful_payment
-    payload = payment.invoice_payload
-    stars = payment.total_amount
-    
-    if payload.startswith("account_"):
-        country = payload.replace("account_", "")
-        country_name = "Индонезия" if country == "indonesia" else "Индия"
-        
-        save_order(user_id, "account", country_name, "stars", stars)
-        
-        for admin_id in ADMIN_IDS:
-            await bot.send_message(
-                admin_id,
-                f"🆕 Новый заказ!\n\n"
-                f"Пользователь: {message.from_user.first_name}\n"
-                f"ID: {user_id}\n"
-                f"Товар: Аккаунт {country_name}\n"
-                f"Оплата: {stars} звезд"
-            )
-        
-        text = get_text(lang, "payment_success", country=country_name)
-        
-        try:
-            await message.delete()
-        except:
-            pass
-        
-        await message.answer(text, reply_markup=main_menu_kb(user_id))
 
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
