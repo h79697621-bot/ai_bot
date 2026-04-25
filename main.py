@@ -35,6 +35,7 @@ cursor.execute('''
         item_type TEXT,
         item_name TEXT,
         payment_method TEXT,
+        amount INTEGER,
         status TEXT,
         created_at TEXT
     )
@@ -57,9 +58,9 @@ def get_setting(key):
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
-def save_order(user_id, item_type, item_name, payment_method):
-    cursor.execute('INSERT INTO orders (user_id, item_type, item_name, payment_method, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                  (user_id, item_type, item_name, payment_method, "pending", str(datetime.now())))
+def save_order(user_id, item_type, item_name, payment_method, amount):
+    cursor.execute('INSERT INTO orders (user_id, item_type, item_name, payment_method, amount, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  (user_id, item_type, item_name, payment_method, amount, "pending", str(datetime.now())))
     conn.commit()
 
 async def send_message_safe(message, text, photo_key, reply_markup):
@@ -71,7 +72,6 @@ async def send_message_safe(message, text, photo_key, reply_markup):
     except:
         pass
     
-    # Добавляем премиум эмодзи в начало текста
     final_text = f'<tg-emoji emoji-id="{PREMIUM_EMOJI_ID}"></tg-emoji> {text}'
     
     if photo_path and os.path.exists(photo_path):
@@ -90,7 +90,6 @@ async def send_message_safe(message, text, photo_key, reply_markup):
         await message.answer(final_text, reply_markup=reply_markup, parse_mode="HTML")
 
 async def send_invoice_message(message, title, description, payload, amount):
-    """Отправляет счет на оплату звездами"""
     try:
         await message.delete()
     except:
@@ -136,16 +135,17 @@ def accounts_menu_kb():
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Оплатить 30 звезд", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="⭐ Оплатить звездами (30⭐)", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="💳 Оплатить рублями (40₽)", callback_data=f"pay_rub_{country}")],
         [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
     ])
 
 def admin_panel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Фото приветствия", callback_data="admin_set_welcome_photo")],
-        [InlineKeyboardButton(text="Фото звезд", callback_data="admin_set_stars_photo")],
-        [InlineKeyboardButton(text="Фото аккаунтов", callback_data="admin_set_accounts_photo")],
-        [InlineKeyboardButton(text="Заказы", callback_data="admin_orders")],
+        [InlineKeyboardButton(text="📸 Фото приветствия", callback_data="admin_set_welcome_photo")],
+        [InlineKeyboardButton(text="📸 Фото звезд", callback_data="admin_set_stars_photo")],
+        [InlineKeyboardButton(text="📸 Фото аккаунтов", callback_data="admin_set_accounts_photo")],
+        [InlineKeyboardButton(text="📋 Заказы", callback_data="admin_orders")],
         [InlineKeyboardButton(text="◀ Главное меню", callback_data="back_to_menu")]
     ])
 
@@ -196,14 +196,14 @@ async def buy_stars(callback: CallbackQuery):
     prices = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}
     price = prices.get(stars, 0)
     
-    text = f"Покупка {stars} звезд\n\nЦена: {price}₽\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
+    text = f"Покупка {stars} звезд\n\n💰 Цена: {price}₽\n\n📩 По вопросам оплаты: @{SELLER_USERNAME}"
     
     await send_message_safe(
         message=callback.message,
         text=text,
         photo_key="stars_photo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="◀ Назад", callback_data="stars_menu")]
         ])
     )
@@ -211,7 +211,7 @@ async def buy_stars(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "accounts_menu")
 async def accounts_menu(callback: CallbackQuery):
-    text = "Выберите страну:"
+    text = "🌍 Выберите страну:"
     
     await send_message_safe(
         message=callback.message,
@@ -226,7 +226,7 @@ async def choose_country(callback: CallbackQuery):
     country = callback.data.split("_")[1]
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    text = f"{country_name}\n\nЦена: 30 звезд\n\nНажмите для оплаты:"
+    text = f"{country_name}\n\n⭐ Цена: 30 звезд\n💳 Цена: 40₽\n\nВыберите способ оплаты:"
     
     await send_message_safe(
         message=callback.message,
@@ -250,6 +250,36 @@ async def pay_account_stars(callback: CallbackQuery):
     )
     await callback.answer()
 
+@dp.callback_query(F.data.startswith("pay_rub_"))
+async def pay_account_rub(callback: CallbackQuery):
+    country = callback.data.replace("pay_rub_", "")
+    country_name = "Индонезия" if country == "indonesia" else "Индия"
+    
+    amount = 40
+    payment_link = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79155613790&bankCode=100000000111"
+    
+    text = f"💳 Счет на оплату\n\n"
+    text += f"Товар: Аккаунт {country_name}\n"
+    text += f"Сумма к оплате: {amount}₽\n\n"
+    text += f"📱 Номер получателя: +7 915 561-37-90\n"
+    text += f"🏦 Банк: Сбербанк\n\n"
+    text += f"🔗 Ссылка для оплаты:\n{payment_link}\n\n"
+    text += f"📩 После оплаты отправьте чек сюда: @{SELLER_USERNAME}"
+    
+    save_order(callback.from_user.id, "account", country_name, "rub", amount)
+    
+    await send_message_safe(
+        message=callback.message,
+        text=text,
+        photo_key="accounts_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить", url=payment_link)],
+            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
+        ])
+    )
+    await callback.answer()
+
 @dp.pre_checkout_query()
 async def pre_checkout(pre_checkout: PreCheckoutQuery):
     await pre_checkout.answer(ok=True)
@@ -265,7 +295,7 @@ async def successful_payment(message: Message):
         country = payload.replace("account_", "")
         country_name = "Индонезия" if country == "indonesia" else "Индия"
         
-        save_order(user_id, "account", country_name, "stars")
+        save_order(user_id, "account", country_name, "stars", stars)
         
         for admin_id in ADMIN_IDS:
             await bot.send_message(
@@ -279,7 +309,6 @@ async def successful_payment(message: Message):
         
         text = f"✅ Оплата прошла успешно!\n\nАккаунт {country_name} будет отправлен в течение 5 минут.\nСпасибо за покупку!"
         
-        # Отправляем без эмодзи через обычный answer, чтобы избежать проблем
         try:
             await message.delete()
         except:
@@ -337,11 +366,11 @@ async def admin_orders(callback: CallbackQuery):
     orders = cursor.fetchall()
     
     if not orders:
-        text = "Нет заказов"
+        text = "📋 Нет заказов"
     else:
-        text = "Заказы:\n\n"
+        text = "📋 Заказы:\n\n"
         for order in orders:
-            text += f"#{order[0]} | {order[2]} | {order[3]} | {order[5]}\n"
+            text += f"#{order[0]} | {order[2]} | {order[3]} | {order[4]} {order[5]} | {order[7]}\n"
     
     await callback.message.answer(text)
     await callback.answer()
@@ -362,13 +391,13 @@ async def save_photo(message: Message):
     
     if "привет" in caption:
         set_setting("welcome_photo", file_path)
-        await message.answer("✅ Фото для главного меню сохранено!")
+        await message.answer("✅ Фото для приветствия сохранено!")
     elif "звезды" in caption:
         set_setting("stars_photo", file_path)
-        await message.answer("✅ Фото для раздела Звезды сохранено!")
+        await message.answer("✅ Фото для звезд сохранено!")
     elif "аккаунты" in caption:
         set_setting("accounts_photo", file_path)
-        await message.answer("✅ Фото для раздела Аккаунты сохранено!")
+        await message.answer("✅ Фото для аккаунтов сохранено!")
     else:
         await message.answer("❌ Укажите подпись: привет, звезды или аккаунты")
 
@@ -389,11 +418,11 @@ async def admin_cmd(message: Message):
 
 async def main():
     try:
-        log.info("Запуск бота...")
+        log.info("🚀 Запуск бота...")
         await dp.start_polling(bot, skip_updates=True)
     finally:
         await bot.session.close()
-        log.info("Бот остановлен")
+        log.info("🛑 Бот остановлен")
 
 if __name__ == '__main__':
     asyncio.run(main())
