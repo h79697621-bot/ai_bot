@@ -48,7 +48,7 @@ cursor.execute('''
 ''')
 conn.commit()
 
-ADMIN_IDS = [8364328997 , 8318310777]
+ADMIN_IDS = [8364328997, 8318310777]
 SELLER_USERNAME = "vorrxy"
 PREMIUM_EMOJI_ID = "5348370156340933254"
 PHONE_NUMBER = "+79155613790"
@@ -99,8 +99,8 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Покупка аккаунта {country}",
             "buy_account_rub_title": "💳 Счет на оплату\n\nТовар: Аккаунт {country}\nСумма к оплате: {amount}₽\n\n🔗 Ссылка для оплаты:\n{link}",
             "payment_success": "✅ Оплата прошла успешно!\n\nАккаунт {country} будет отправлен в течение 5 минут.\nСпасибо за покупку!",
-            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения 
-            "lang_changed": "🌐 Язык изменен на русский
+            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения.\n\n,
+            "lang_changed": "🌐 Язык изменен на русский",
             "lang_changed_en": "🌐 Language changed to English",
             "buy_stars": "Купить звезды",
             "accounts": "Аккаунты",
