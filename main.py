@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import os
 from datetime import datetime
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, LabeledPrice, PreCheckoutQuery
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
@@ -125,9 +125,11 @@ def get_text(lang, key, **kwargs):
             "admin_panel": "Админ панель",
             "gifts": "🎁 Подарки",
             "select_gift": "🎁 Выберите подарок:",
+            "enter_user_id": "📝 Введите ID пользователя, которому отправить подарок:",
             "enter_comment": "📝 Введите комментарий к подарку (до 128 символов):",
-            "gift_sent": "✅ Подарок отправлен!\n\n🎁 {gift_name}\n💬 Комментарий: {comment}\n💸 Списано звезд: {price}⭐",
-            "gift_error": "❌ Ошибка при отправке подарка",
+            "gift_sent": "✅ Подарок отправлен!\n\n🎁 {gift_name}\n👤 Получатель: {user_id}\n💬 Комментарий: {comment}\n💸 Списано звезд: {price}⭐",
+            "gift_error": "❌ Ошибка при отправке подарка: {error}",
+            "gift_error_balance": "❌ Недостаточно звезд на балансе бота! Нужно: {price}⭐",
             "back": "◀ Главное меню",
             "back_btn": "◀ Назад",
             "indonesia": "Индонезия",
@@ -157,9 +159,11 @@ def get_text(lang, key, **kwargs):
             "admin_panel": "Admin panel",
             "gifts": "🎁 Gifts",
             "select_gift": "🎁 Select a gift:",
+            "enter_user_id": "📝 Enter the user ID to send the gift to:",
             "enter_comment": "📝 Enter comment for the gift (max 128 characters):",
-            "gift_sent": "✅ Gift sent!\n\n🎁 {gift_name}\n💬 Comment: {comment}\n💸 Stars spent: {price}⭐",
-            "gift_error": "❌ Error sending gift",
+            "gift_sent": "✅ Gift sent!\n\n🎁 {gift_name}\n👤 Recipient: {user_id}\n💬 Comment: {comment}\n💸 Stars spent: {price}⭐",
+            "gift_error": "❌ Error sending gift: {error}",
+            "gift_error_balance": "❌ Insufficient bot balance! Need: {price}⭐",
             "back": "◀ Main menu",
             "back_btn": "◀ Back",
             "indonesia": "Indonesia",
@@ -562,51 +566,82 @@ async def gift_select(callback: CallbackQuery):
     
     lang = get_language(callback.from_user.id)
     set_setting("selected_gift", gift_key)
-    await callback.message.answer(get_text(lang, "enter_comment"))
+    await callback.message.answer(get_text(lang, "enter_user_id"))
     await callback.answer()
 
 @dp.message(F.text)
-async def send_gift_with_comment(message: Message):
+async def handle_gift_flow(message: Message):
     if not is_admin(message.from_user.id):
         return
     
+    step = get_setting("gift_step")
+    
+    if step == "awaiting_user_id":
+        try:
+            recipient_id = int(message.text.strip())
+            set_setting("gift_recipient", str(recipient_id))
+            set_setting("gift_step", "awaiting_comment")
+            lang = get_language(message.from_user.id)
+            await message.answer(get_text(lang, "enter_comment"))
+        except ValueError:
+            await message.answer("❌ Неверный ID пользователя. Введите число.")
+        return
+    
+    if step == "awaiting_comment":
+        comment = message.text.strip()
+        if len(comment) > 128:
+            await message.answer("❌ Комментарий слишком длинный! Максимум 128 символов.")
+            return
+        
+        gift_key = get_setting("selected_gift")
+        recipient_id = int(get_setting("gift_recipient") or 0)
+        
+        if not gift_key or not recipient_id:
+            await message.answer("❌ Ошибка: выберите подарок заново.")
+            set_setting("gift_step", "")
+            return
+        
+        gift_info = GIFTS.get(gift_key)
+        if not gift_info:
+            await message.answer("❌ Подарок не найден")
+            set_setting("gift_step", "")
+            return
+        
+        lang = get_language(message.from_user.id)
+        
+        try:
+            await bot.send_gift(
+                user_id=recipient_id,
+                gift_id=gift_info["id"],
+                text=comment,
+                text_parse_mode="HTML"
+            )
+            
+            await message.answer(
+                get_text(lang, "gift_sent", 
+                        gift_name=gift_info["name"], 
+                        user_id=recipient_id,
+                        comment=comment, 
+                        price=gift_info["price"])
+            )
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "Not enough stars" in error_msg or "BALANCE_TOO_LOW" in error_msg:
+                await message.answer(get_text(lang, "gift_error_balance", price=gift_info["price"]))
+            else:
+                await message.answer(get_text(lang, "gift_error", error=error_msg[:100]))
+        
+        set_setting("gift_step", "")
+        set_setting("selected_gift", "")
+        set_setting("gift_recipient", "")
+        return
+    
+    # Первый шаг — ожидаем ID пользователя
     gift_key = get_setting("selected_gift")
-    if not gift_key:
-        return
-    
-    gift_info = GIFTS.get(gift_key)
-    if not gift_info:
-        set_setting("selected_gift", "")
-        return
-    
-    comment = message.text.strip()
-    if len(comment) > 128:
-        await message.answer("❌ Комментарий слишком длинный! Максимум 128 символов.")
-        return
-    
-    lang = get_language(message.from_user.id)
-    
-    try:
-        await bot.send_gift(
-            business_connection_id=None,
-            user_id=message.from_user.id,
-            gift_id=gift_info["id"],
-            text=comment,
-            text_parse_mode="HTML"
-        )
-        
-        await message.answer(
-            get_text(lang, "gift_sent", 
-                    gift_name=gift_info["name"], 
-                    comment=comment, 
-                    price=gift_info["price"])
-        )
-        
-        set_setting("selected_gift", "")
-        
-    except Exception as e:
-        log.error(f"Ошибка отправки подарка: {e}")
-        await message.answer(get_text(lang, "gift_error"))
+    if gift_key:
+        set_setting("gift_step", "awaiting_user_id")
+        await handle_gift_flow(message)
 
 @dp.callback_query(F.data == "admin_orders")
 async def admin_orders(callback: CallbackQuery):
@@ -678,3 +713,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+```
