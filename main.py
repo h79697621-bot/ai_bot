@@ -99,7 +99,7 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Покупка аккаунта {country}",
             "buy_account_rub_title": "💳 Счет на оплату\n\nТовар: Аккаунт {country}\nСумма к оплате: {amount}₽\n\n🔗 Ссылка для оплаты:\n{link}",
             "payment_success": "✅ Оплата прошла успешно!\n\nАккаунт {country} будет отправлен в течение 5 минут.\nСпасибо за покупку!",
-            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения.\n\n,
+            "info_text": "ℹ️ Информация о магазине\n\n📦 Мы продаем аккаунты и звёзды Telegram\n\n💳 После оплаты пришлите скриншот чека в личные сообщения.",
             "lang_changed": "🌐 Язык изменен на русский",
             "lang_changed_en": "🌐 Language changed to English",
             "buy_stars": "Купить звезды",
@@ -126,7 +126,7 @@ def get_text(lang, key, **kwargs):
             "buy_account_stars_desc": "Purchase of account {country}",
             "buy_account_rub_title": "💳 Payment invoice\n\nProduct: Account {country}\nAmount to pay: {amount}₽\n\n🔗 Payment link:\n{link}",
             "payment_success": "✅ Payment successful!\n\nAccount {country} will be sent within 5 minutes.\nThank you for your purchase!",
-            "info_text": "ℹ️ Store Information\n\n📦 We sell accounts and Telegram stars\n\n💳 After payment, send a screenshot of the receipt in a personal message and indicate what you bought.\n\n👨‍💼 Owner: @{owner}",
+            "info_text": "ℹ️ Store Information\n\n📦 We sell accounts and Telegram stars\n\n💳 After payment, send a screenshot of the receipt in a personal message.",
             "lang_changed": "🌐 Language changed to English",
             "lang_changed_ru": "🌐 Язык изменен на русский",
             "buy_stars": "Buy stars",
@@ -287,7 +287,7 @@ async def info_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
     lang = get_language(user_id)
     
-    text = get_text(lang, "info_text", owner=SELLER_USERNAME)
+    text = get_text(lang, "info_text")
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=get_text(lang, "write_seller"), url=f"https://t.me/{SELLER_USERNAME}")],
