@@ -454,7 +454,7 @@ async def admin_panel(callback: CallbackQuery):
         await callback.answer("Нет доступа")
         return
     
-    text = "👑 Админ-панель\n\nВыберите действие:"
+    text = "Админ-панель\n\nВыберите действие:"
     
     await send_message_safe(
         message=callback.message,
@@ -469,7 +469,7 @@ async def admin_set_welcome_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: привет)")
+    await callback.message.answer("Отправьте фото (подпись: привет)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_set_stars_photo")
@@ -477,7 +477,7 @@ async def admin_set_stars_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: звезды)")
+    await callback.message.answer("Отправьте фото (подпись: звезды)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_set_accounts_photo")
@@ -485,7 +485,7 @@ async def admin_set_accounts_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: аккаунты)")
+    await callback.message.answer("Отправьте фото (подпись: аккаунты)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_orders")
@@ -498,9 +498,9 @@ async def admin_orders(callback: CallbackQuery):
     orders = cursor.fetchall()
     
     if not orders:
-        text = "📋 Нет заказов"
+        text = "Нет заказов"
     else:
-        text = "📋 Заказы:\n\n"
+        text = "Заказы:\n\n"
         for order in orders:
             text += f"#{order[0]} | {order[2]} | {order[3]} | {order[4]} {order[5]} | {order[7]}\n"
     
@@ -523,17 +523,38 @@ async def save_photo(message: Message):
     
     if "привет" in caption:
         set_setting("welcome_photo", file_path)
-        await message.answer("✅ Фото для приветствия сохранено!")
+        await message.answer("Фото для приветствия сохранено!")
     elif "звезды" in caption:
         set_setting("stars_photo", file_path)
-        await message.answer("✅ Фото для звезд сохранено!")
+        await message.answer("Фото для звезд сохранено!")
     elif "аккаунты" in caption:
         set_setting("accounts_photo", file_path)
-        await message.answer("✅ Фото для аккаунтов сохранено!")
+        await message.answer("Фото для аккаунтов сохранено!")
     else:
-        await message.answer("❌ Укажите подпись: привет, звезды или аккаунты")
+        await message.answer("Укажите подпись: привет, звезды или аккаунты")
 
 @dp.message(Command("admin"))
 async def admin_cmd(message: Message):
     if not is_admin(message.from_user.id):
-        await message.answer("Нет дост
+        await message.answer("Нет доступа")
+        return
+    
+    text = "Админ-панель\n\nВыберите действие:"
+    
+    await send_message_safe(
+        message=message,
+        text=text,
+        photo_key="welcome_photo",
+        reply_markup=admin_panel_kb()
+    )
+
+async def main():
+    try:
+        log.info("Запуск бота...")
+        await dp.start_polling(bot, skip_updates=True)
+    finally:
+        await bot.session.close()
+        log.info("Бот остановлен")
+
+if __name__ == '__main__':
+    asyncio.run(main())
