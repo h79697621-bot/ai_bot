@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sqlite3
 import os
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
 from aiogram.client.bot import DefaultBotProperties
@@ -31,7 +32,8 @@ cursor.execute('''
     CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        country TEXT,
+        item_type TEXT,
+        item_name TEXT,
         payment_method TEXT,
         status TEXT,
         created_at TEXT
@@ -54,12 +56,57 @@ def get_setting(key):
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
-def save_order(user_id, country, payment_method):
-    cursor.execute('INSERT INTO orders (user_id, country, payment_method, status, created_at) VALUES (?, ?, ?, ?, ?)',
-                  (user_id, country, payment_method, "pending", str(asyncio.get_event_loop().time())))
+def save_order(user_id, item_type, item_name, payment_method):
+    cursor.execute('INSERT INTO orders (user_id, item_type, item_name, payment_method, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                  (user_id, item_type, item_name, payment_method, "pending", str(datetime.now())))
     conn.commit()
 
-def main_menu(user_id):
+def admin_panel_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Фото для приветствия", callback_data="admin_set_welcome_photo")],
+        [InlineKeyboardButton(text="Фото для звезд", callback_data="admin_set_stars_photo")],
+        [InlineKeyboardButton(text="Фото для аккаунтов", callback_data="admin_set_accounts_photo")],
+        [InlineKeyboardButton(text="Заказы", callback_data="admin_orders")],
+        [InlineKeyboardButton(text="Главное меню", callback_data="back_to_menu")]
+    ])
+
+async def send_with_photo(chat_id, text, photo_key, reply_markup=None):
+    photo_path = get_setting(photo_key)
+    
+    if photo_path and os.path.exists(photo_path):
+        try:
+            photo = FSInputFile(photo_path)
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=text,
+                reply_markup=reply_markup
+            )
+            return True
+        except Exception as e:
+            log.error(f"Ошибка отправки фото: {e}")
+            return False
+    return False
+
+async def edit_with_photo(message, text, photo_key, reply_markup=None):
+    photo_path = get_setting(photo_key)
+    
+    if photo_path and os.path.exists(photo_path):
+        try:
+            photo = FSInputFile(photo_path)
+            await message.delete()
+            await message.answer_photo(
+                photo=photo,
+                caption=text,
+                reply_markup=reply_markup
+            )
+            return True
+        except Exception as e:
+            log.error(f"Ошибка отправки фото: {e}")
+            return False
+    return False
+
+def main_menu_kb(user_id):
     admin_status = is_admin(user_id)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Купить звезды", callback_data="stars_menu")],
@@ -89,41 +136,49 @@ def accounts_menu_kb():
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Купить звездами (30 звезд)", callback_data=f"pay_stars_{country}")],
-        [InlineKeyboardButton(text="Купить рублями (40 руб)", callback_data=f"pay_rub_{country}")],
+        [InlineKeyboardButton(text="Купить звездами (30 звезд)", callback_data=f"pay_stars_account_{country}")],
+        [InlineKeyboardButton(text="Купить рублями (40 руб)", callback_data=f"pay_rub_account_{country}")],
         [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
     ])
 
-def admin_panel_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Фото для товара", callback_data="admin_set_photo")],
-        [InlineKeyboardButton(text="QR код для руб.", callback_data="admin_set_qr")],
-        [InlineKeyboardButton(text="Заказы", callback_data="admin_orders")],
-        [InlineKeyboardButton(text="Главное меню", callback_data="back_to_menu")]
-    ])
-
+# ========== ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
 @dp.message(Command("start"))
 async def start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
-    await message.answer(
-        f"Здравствуйте, {username}!",
-        reply_markup=main_menu(user_id)
+    text = f"Здравствуйте, {username}!\n\nДобро пожаловать в магазин!\n\nВыберите раздел:"
+    
+    photo_sent = await send_with_photo(
+        chat_id=user_id,
+        text=text,
+        photo_key="welcome_photo",
+        reply_markup=main_menu_kb(user_id)
     )
+    
+    if not photo_sent:
+        await message.answer(text, reply_markup=main_menu_kb(user_id))
 
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
-    await callback.message.edit_text(
-        f"Здравствуйте, {callback.from_user.first_name}!",
-        reply_markup=main_menu(user_id)
+    text = f"Здравствуйте, {callback.from_user.first_name}!\n\nВыберите раздел:"
+    
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="welcome_photo",
+        reply_markup=main_menu_kb(user_id)
     )
     await callback.answer()
 
 @dp.callback_query(F.data == "stars_menu")
 async def stars_menu(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "Курс: 1 звезда = 1.3 руб\n\nВыберите количество:",
+    text = "Курс: 1 звезда = 1.3 руб\n\nВыберите количество:"
+    
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="stars_photo",
         reply_markup=stars_menu_kb()
     )
     await callback.answer()
@@ -132,38 +187,27 @@ async def stars_menu(callback: CallbackQuery):
 async def buy_stars(callback: CallbackQuery):
     stars = callback.data.split("_")[1]
     price = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}[stars]
+    text = f"Покупка {stars} звезд\n\nЦена: {price} руб\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
     
-    photo_path = get_setting("stars_photo")
-    text = f"Покупка {stars} звезд\n\nЦена: {price} руб\n\nПо всем вопросам к продавцу: @{SELLER_USERNAME}"
-    
-    if photo_path and os.path.exists(photo_path):
-        try:
-            photo = FSInputFile(photo_path)
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                    [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
-                ])
-            )
-        except:
-            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
-            ]))
-    else:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="stars_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="Назад", callback_data="stars_menu")]
-        ]))
+        ])
+    )
     await callback.answer()
 
 @dp.callback_query(F.data == "accounts_menu")
 async def accounts_menu(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "Выберите страну:",
+    text = "Выберите страну:"
+    
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="accounts_photo",
         reply_markup=accounts_menu_kb()
     )
     await callback.answer()
@@ -172,77 +216,52 @@ async def accounts_menu(callback: CallbackQuery):
 async def choose_country(callback: CallbackQuery):
     country = callback.data.split("_")[1]
     country_name = "Индонезия" if country == "indonesia" else "Индия"
+    text = f"{country_name}\n\nЦена: 30 звезд или 40 руб\n\nВыберите способ оплаты:"
     
-    await callback.message.edit_text(
-        f"{country_name}\n\nЦена: 30 звезд или 40 руб\n\nВыберите способ оплаты:",
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="accounts_photo",
         reply_markup=buy_account_kb(country)
     )
     await callback.answer()
 
-# ========== ОПЛАТА ЗВЕЗДАМИ ==========
-@dp.callback_query(F.data.startswith("pay_stars_"))
-async def pay_with_stars(callback: CallbackQuery):
-    country = callback.data.replace("pay_stars_", "")
+@dp.callback_query(F.data.startswith("pay_stars_account_"))
+async def pay_account_stars(callback: CallbackQuery):
+    country = callback.data.replace("pay_stars_account_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
+    text = f"Оплата аккаунта {country_name}\n\nЦена: 30 звезд\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
     
-    photo_path = get_setting("stars_photo")
-    text = f"Оплата аккаунта {country_name}\n\nЦена: 30 звезд\n\nПо всем вопросам к продавцу: @{SELLER_USERNAME}"
+    save_order(callback.from_user.id, "account", country_name, "stars")
     
-    if photo_path and os.path.exists(photo_path):
-        try:
-            photo = FSInputFile(photo_path)
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=photo,
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                    [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-                ])
-            )
-        except:
-            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-            ]))
-    else:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="stars_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-        ]))
+        ])
+    )
     await callback.answer()
 
-# ========== ОПЛАТА РУБЛЯМИ ==========
-@dp.callback_query(F.data.startswith("pay_rub_"))
-async def pay_with_rub(callback: CallbackQuery):
-    country = callback.data.replace("pay_rub_", "")
+@dp.callback_query(F.data.startswith("pay_rub_account_"))
+async def pay_account_rub(callback: CallbackQuery):
+    country = callback.data.replace("pay_rub_account_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
+    text = f"Оплата аккаунта {country_name}\n\nЦена: 40 руб\n\nСвяжитесь с продавцом: @{SELLER_USERNAME}"
     
-    qr_path = get_setting("qr_photo")
-    text = f"Оплата аккаунта {country_name}\n\nЦена: 40 руб\n\nПо всем вопросам к продавцу: @{SELLER_USERNAME}"
+    save_order(callback.from_user.id, "account", country_name, "rub")
     
-    if qr_path and os.path.exists(qr_path):
-        try:
-            qr = FSInputFile(qr_path)
-            await callback.message.delete()
-            await callback.message.answer_photo(
-                photo=qr,
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                    [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-                ])
-            )
-        except:
-            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
-                [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-            ]))
-    else:
-        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    await edit_with_photo(
+        message=callback.message,
+        text=text,
+        photo_key="accounts_photo",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="Назад", callback_data="accounts_menu")]
-        ]))
+        ])
+    )
     await callback.answer()
 
 # ========== АДМИН ПАНЕЛЬ ==========
@@ -254,20 +273,28 @@ async def admin_panel(callback: CallbackQuery):
     await callback.message.edit_text("Админ-панель", reply_markup=admin_panel_kb())
     await callback.answer()
 
-@dp.callback_query(F.data == "admin_set_photo")
-async def admin_set_photo(callback: CallbackQuery):
+@dp.callback_query(F.data == "admin_set_welcome_photo")
+async def admin_set_welcome_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("Отправьте фото для товара")
+    await callback.message.answer("Отправьте фото для приветствия")
     await callback.answer()
 
-@dp.callback_query(F.data == "admin_set_qr")
-async def admin_set_qr(callback: CallbackQuery):
+@dp.callback_query(F.data == "admin_set_stars_photo")
+async def admin_set_stars_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    await callback.message.answer("Отправьте QR код для оплаты рублями")
+    await callback.message.answer("Отправьте фото для раздела Звезды")
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_set_accounts_photo")
+async def admin_set_accounts_photo(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    await callback.message.answer("Отправьте фото для раздела Аккаунты")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_orders")
@@ -294,18 +321,24 @@ async def save_photo(message: Message):
     
     file_id = message.photo[-1].file_id
     file = await bot.get_file(file_id)
-    timestamp = int(asyncio.get_event_loop().time())
+    timestamp = int(datetime.now().timestamp())
     file_path = os.path.join(PHOTO_DIR, f"{timestamp}.jpg")
     await bot.download_file(file.file_path, file_path)
     
     caption = message.caption.lower() if message.caption else ""
     
-    if "qr" in caption:
-        set_setting("qr_photo", file_path)
-        await message.answer("QR код сохранен!")
-    else:
+    if "привет" in caption or "welcome" in caption:
+        set_setting("welcome_photo", file_path)
+        await message.answer("Фото для приветствия сохранено!")
+    elif "звезд" in caption or "stars" in caption:
         set_setting("stars_photo", file_path)
-        await message.answer("Фото для товара сохранено!")
+        await message.answer("Фото для раздела Звезды сохранено!")
+    elif "аккаунт" in caption or "account" in caption:
+        set_setting("accounts_photo", file_path)
+        await message.answer("Фото для раздела Аккаунты сохранено!")
+    else:
+        set_setting("welcome_photo", file_path)
+        await message.answer("Фото сохранено как приветствие")
 
 @dp.message(Command("admin"))
 async def admin_cmd(message: Message):
