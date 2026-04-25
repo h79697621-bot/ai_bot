@@ -102,36 +102,37 @@ def stars_menu_kb():
         [InlineKeyboardButton(text="300⭐", callback_data="buy_300")],
         [InlineKeyboardButton(text="400⭐", callback_data="buy_400")],
         [InlineKeyboardButton(text="500⭐", callback_data="buy_500")],
-        [InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="◀ Главное меню", callback_data="back_to_menu")]
     ])
 
 def accounts_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Индонезия", callback_data="country_indonesia")],
-        [InlineKeyboardButton(text="Индия", callback_data="country_india")],
-        [InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="🇮🇩 Индонезия", callback_data="country_indonesia")],
+        [InlineKeyboardButton(text="🇮🇳 Индия", callback_data="country_india")],
+        [InlineKeyboardButton(text="◀ Главное меню", callback_data="back_to_menu")]
     ])
 
 def buy_account_kb(country):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Оплатить 30 звезд", callback_data=f"pay_stars_{country}")],
+        [InlineKeyboardButton(text="⭐ Купить за 30 звезд", callback_data=f"pay_stars_{country}")],
         [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
     ])
 
 def admin_panel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Фото для приветствия", callback_data="admin_set_welcome_photo")],
-        [InlineKeyboardButton(text="Фото для звезд", callback_data="admin_set_stars_photo")],
-        [InlineKeyboardButton(text="Фото для аккаунтов", callback_data="admin_set_accounts_photo")],
-        [InlineKeyboardButton(text="Заказы", callback_data="admin_orders")],
-        [InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="📸 Фото приветствия", callback_data="admin_set_welcome_photo")],
+        [InlineKeyboardButton(text="📸 Фото звезд", callback_data="admin_set_stars_photo")],
+        [InlineKeyboardButton(text="📸 Фото аккаунтов", callback_data="admin_set_accounts_photo")],
+        [InlineKeyboardButton(text="📋 Заказы", callback_data="admin_orders")],
+        [InlineKeyboardButton(text="◀ Главное меню", callback_data="back_to_menu")]
     ])
 
 @dp.message(Command("start"))
 async def start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.first_name
-    text = f"Здравствуйте, {username}!\n\nДобро пожаловать в магазин!\n\nКурс: 1⭐ = 1.3₽"
+    
+    text = f"Здравствуйте, {username}!\n\nВыберите действие:"
     
     await send_message_safe(
         message=message,
@@ -143,7 +144,9 @@ async def start(message: Message):
 @dp.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
-    text = f"Здравствуйте, {callback.from_user.first_name}!\n\nКурс: 1⭐ = 1.3₽"
+    username = callback.from_user.first_name
+    
+    text = f"Здравствуйте, {username}!\n\nВыберите действие:"
     
     await send_message_safe(
         message=callback.message,
@@ -168,16 +171,17 @@ async def stars_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy_stars(callback: CallbackQuery):
     stars = callback.data.split("_")[1]
-    price = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}[stars]
+    prices = {"50": 65, "100": 130, "200": 260, "300": 390, "400": 520, "500": 650}
+    price = prices.get(stars, 0)
     
-    text = f"Покупка {stars} звезд\n\nЦена: {price}₽\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
+    text = f"🛒 Покупка {stars} звезд\n\n💰 Цена: {price}₽\n\n📩 По вопросам оплаты: @{SELLER_USERNAME}"
     
     await send_message_safe(
         message=callback.message,
         text=text,
         photo_key="stars_photo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="◀ Назад", callback_data="stars_menu")]
         ])
     )
@@ -185,7 +189,7 @@ async def buy_stars(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "accounts_menu")
 async def accounts_menu(callback: CallbackQuery):
-    text = "Выберите страну:"
+    text = "🌍 Выберите страну:"
     
     await send_message_safe(
         message=callback.message,
@@ -198,8 +202,9 @@ async def accounts_menu(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("country_"))
 async def choose_country(callback: CallbackQuery):
     country = callback.data.split("_")[1]
-    country_name = "🇮🇩 Индонезия" if country == "indonesia" else "🇮🇳 Индия"
-    text = f"{country_name}\n\nЦена: 30⭐\n\nНажмите на кнопку для оплаты:"
+    country_name = "Индонезия" if country == "indonesia" else "Индия"
+    
+    text = f"🇮🇩 {country_name}\n\n⭐ Цена: 30 звезд\n\nВыберите способ оплаты:"
     
     await send_message_safe(
         message=callback.message,
@@ -214,14 +219,16 @@ async def pay_account_stars(callback: CallbackQuery):
     country = callback.data.replace("pay_stars_", "")
     country_name = "Индонезия" if country == "indonesia" else "Индия"
     
-    text = f"Оплата аккаунта {country_name}\n\nЦена: 30⭐\n\nПо вопросам оплаты: @{SELLER_USERNAME}"
+    text = f"🛒 Оплата аккаунта {country_name}\n\n⭐ Цена: 30 звезд\n\n📩 По вопросам оплаты: @{SELLER_USERNAME}"
+    
+    save_order(callback.from_user.id, "account", country_name, "stars")
     
     await send_message_safe(
         message=callback.message,
         text=text,
         photo_key="accounts_photo",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
+            [InlineKeyboardButton(text="📩 Написать продавцу", url=f"https://t.me/{SELLER_USERNAME}")],
             [InlineKeyboardButton(text="◀ Назад", callback_data="accounts_menu")]
         ])
     )
@@ -230,12 +237,14 @@ async def pay_account_stars(callback: CallbackQuery):
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа")
+        await callback.answer("⛔ Нет доступа")
         return
+    
+    text = "👑 Админ-панель\n\nВыберите действие:"
     
     await send_message_safe(
         message=callback.message,
-        text="👑 Админ-панель",
+        text=text,
         photo_key="welcome_photo",
         reply_markup=admin_panel_kb()
     )
@@ -244,31 +253,31 @@ async def admin_panel(callback: CallbackQuery):
 @dp.callback_query(F.data == "admin_set_welcome_photo")
 async def admin_set_welcome_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа")
+        await callback.answer("⛔ Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: привет)")
+    await callback.message.answer("📸 Отправьте фото для главного меню\n(подпись: привет)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_set_stars_photo")
 async def admin_set_stars_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа")
+        await callback.answer("⛔ Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: звезды)")
+    await callback.message.answer("📸 Отправьте фото для раздела Звезды\n(подпись: звезды)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_set_accounts_photo")
 async def admin_set_accounts_photo(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа")
+        await callback.answer("⛔ Нет доступа")
         return
-    await callback.message.answer("📸 Отправьте фото (подпись: аккаунты)")
+    await callback.message.answer("📸 Отправьте фото для раздела Аккаунты\n(подпись: аккаунты)")
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_orders")
 async def admin_orders(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа")
+        await callback.answer("⛔ Нет доступа")
         return
     
     cursor.execute('SELECT * FROM orders ORDER BY id DESC LIMIT 20')
@@ -277,9 +286,9 @@ async def admin_orders(callback: CallbackQuery):
     if not orders:
         text = "📋 Нет заказов"
     else:
-        text = "📋 Заказы:\n\n"
+        text = "📋 Последние заказы:\n\n"
         for order in orders:
-            text += f"#{order[0]} | {order[2]} | {order[3]}\n"
+            text += f"#{order[0]} | {order[2]} | {order[3]} | {order[5]}\n"
     
     await callback.message.answer(text)
     await callback.answer()
@@ -287,7 +296,7 @@ async def admin_orders(callback: CallbackQuery):
 @dp.message(F.photo)
 async def save_photo(message: Message):
     if not is_admin(message.from_user.id):
-        await message.answer("Нет доступа")
+        await message.answer("⛔ Нет доступа")
         return
     
     file_id = message.photo[-1].file_id
@@ -300,36 +309,38 @@ async def save_photo(message: Message):
     
     if "привет" in caption:
         set_setting("welcome_photo", file_path)
-        await message.answer("✅ Фото для приветствия сохранено!")
+        await message.answer("✅ Фото для главного меню сохранено!")
     elif "звезды" in caption:
         set_setting("stars_photo", file_path)
-        await message.answer("✅ Фото для звезд сохранено!")
+        await message.answer("✅ Фото для раздела Звезды сохранено!")
     elif "аккаунты" in caption:
         set_setting("accounts_photo", file_path)
-        await message.answer("✅ Фото для аккаунтов сохранено!")
+        await message.answer("✅ Фото для раздела Аккаунты сохранено!")
     else:
         await message.answer("❌ Укажите подпись: привет, звезды или аккаунты")
 
 @dp.message(Command("admin"))
 async def admin_cmd(message: Message):
     if not is_admin(message.from_user.id):
-        await message.answer("Нет доступа")
+        await message.answer("⛔ Нет доступа")
         return
+    
+    text = "👑 Админ-панель\n\nВыберите действие:"
     
     await send_message_safe(
         message=message,
-        text="👑 Админ-панель",
+        text=text,
         photo_key="welcome_photo",
         reply_markup=admin_panel_kb()
     )
 
 async def main():
     try:
-        log.info("Запуск бота...")
+        log.info("🚀 Запуск бота...")
         await dp.start_polling(bot, skip_updates=True)
     finally:
         await bot.session.close()
-        log.info("Бот остановлен")
+        log.info("🛑 Бот остановлен")
 
 if __name__ == '__main__':
     asyncio.run(main())
