@@ -56,6 +56,41 @@ BANK_NAME = "Sberbank"
 PAYMENT_LINK = "https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79155613790&bankCode=100000000111"
 REVIEWS_LINK = "https://t.me/grettpo"
 
+# ID подарков из API
+GIFTS = {
+    "heart": {"id": "5170145012310081615", "name": "💝 Сердце", "price": 15},
+    "bear": {"id": "5170233102089322756", "name": "🧸 Мишка", "price": 15},
+    "gift_box": {"id": "5170250947678437525", "name": "🎁 Подарок", "price": 25},
+    "rose": {"id": "5168103777563050263", "name": "🌹 Роза", "price": 25},
+    "cake": {"id": "5170144170496491616", "name": "🎂 Торт", "price": 50},
+    "bouquet": {"id": "5170314324215857265", "name": "💐 Букет", "price": 50},
+    "rocket": {"id": "5170564780938756245", "name": "🚀 Ракета", "price": 50},
+    "champagne": {"id": "6028601630662853006", "name": "🍾 Шампанское", "price": 50},
+    "cup": {"id": "5168043875654172773", "name": "🏆 Кубок", "price": 100},
+    "ring": {"id": "5170690322832818290", "name": "💍 Кольцо", "price": 100},
+    "diamond": {"id": "5170521118301225164", "name": "💎 Бриллиант", "price": 100},
+}
+
+# Баланс бота для подарков (пополняется админом)
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS bot_balance (
+        id INTEGER PRIMARY KEY,
+        balance INTEGER DEFAULT 0
+    )
+''')
+cursor.execute('INSERT OR IGNORE INTO bot_balance (id, balance) VALUES (1, 0)')
+conn.commit()
+
+def get_bot_balance():
+    cursor.execute('SELECT balance FROM bot_balance WHERE id = 1')
+    result = cursor.fetchone()
+    return result[0] if result else 0
+
+def update_bot_balance(amount):
+    cursor.execute('UPDATE bot_balance SET balance = balance + ? WHERE id = 1', (amount,))
+    conn.commit()
+    return get_bot_balance()
+
 def set_setting(key, value):
     cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
     conn.commit()
@@ -108,6 +143,12 @@ def get_text(lang, key, **kwargs):
             "reviews": "📢 Отзывы",
             "write_seller": "📩 Написать продавцу",
             "admin_panel": "Админ панель",
+            "gifts": "🎁 Подарки",
+            "gift_balance": "💰 Баланс бота: {balance}⭐",
+            "select_gift": "🎁 Выберите подарок:",
+            "enter_comment": "📝 Введите комментарий к подарку (до 128 символов):",
+            "gift_sent": "✅ Подарок отправлен!\n\n🎁 {gift_name}\n💬 Комментарий: {comment}\n💰 Списано: {price}⭐\n📊 Остаток баланса: {balance}⭐",
+            "gift_error": "❌ Недостаточно средств на балансе бота! Нужно {price}⭐, доступно {balance}⭐",
             "back": "◀ Главное меню",
             "back_btn": "◀ Назад",
             "indonesia": "Индонезия",
@@ -115,6 +156,9 @@ def get_text(lang, key, **kwargs):
             "pay_stars": "⭐ Оплатить звездами",
             "pay_rub": "💳 Оплатить рублями",
             "choose_lang": "🌐 Выберите язык:",
+            "add_balance": "💰 Пополнить баланс",
+            "enter_amount": "💰 Введите сумму пополнения баланса бота (в звездах):",
+            "balance_added": "✅ Баланс пополнен на {amount}⭐\n📊 Текущий баланс: {balance}⭐",
         },
         "en": {
             "welcome": "Hello, {username}!\n\nChoose an action:",
@@ -135,6 +179,12 @@ def get_text(lang, key, **kwargs):
             "reviews": "📢 Reviews",
             "write_seller": "📩 Contact seller",
             "admin_panel": "Admin panel",
+            "gifts": "🎁 Gifts",
+            "gift_balance": "💰 Bot balance: {balance}⭐",
+            "select_gift": "🎁 Select a gift:",
+            "enter_comment": "📝 Enter comment for the gift (max 128 characters):",
+            "gift_sent": "✅ Gift sent!\n\n🎁 {gift_name}\n💬 Comment: {comment}\n💰 Spent: {price}⭐\n📊 Remaining balance: {balance}⭐",
+            "gift_error": "❌ Insufficient balance! Need {price}⭐, available {balance}⭐",
             "back": "◀ Main menu",
             "back_btn": "◀ Back",
             "indonesia": "Indonesia",
@@ -142,6 +192,9 @@ def get_text(lang, key, **kwargs):
             "pay_stars": "⭐ Pay with stars",
             "pay_rub": "💳 Pay in rubles",
             "choose_lang": "🌐 Choose language:",
+            "add_balance": "💰 Add balance",
+            "enter_amount": "💰 Enter amount to add to bot balance (in stars):",
+            "balance_added": "✅ Balance increased by {amount}⭐\n📊 Current balance: {balance}⭐",
         }
     }
     
@@ -221,9 +274,18 @@ def admin_panel_kb():
         [InlineKeyboardButton(text="📸 Фото приветствия", callback_data="admin_set_welcome_photo")],
         [InlineKeyboardButton(text="📸 Фото звезд", callback_data="admin_set_stars_photo")],
         [InlineKeyboardButton(text="📸 Фото аккаунтов", callback_data="admin_set_accounts_photo")],
+        [InlineKeyboardButton(text="🎁 Подарки", callback_data="admin_gifts")],
+        [InlineKeyboardButton(text="💰 Баланс бота", callback_data="admin_bot_balance")],
         [InlineKeyboardButton(text="📋 Заказы", callback_data="admin_orders")],
         [InlineKeyboardButton(text="◀ Главное меню", callback_data="back_to_menu")]
     ])
+
+def gifts_list_kb():
+    buttons = []
+    for gift_key, gift_data in GIFTS.items():
+        buttons.append([InlineKeyboardButton(text=f"{gift_data['name']} — {gift_data['price']}⭐", callback_data=f"gift_select_{gift_key}")])
+    buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def lang_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -457,6 +519,7 @@ async def successful_payment(message: Message):
         
         await message.answer(text, reply_markup=main_menu_kb(user_id))
 
+# ========== АДМИН ПАНЕЛЬ ==========
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -496,6 +559,150 @@ async def admin_set_accounts_photo(callback: CallbackQuery):
         return
     await callback.message.answer("Отправьте фото (подпись: аккаунты)")
     await callback.answer()
+
+# ========== ПОДАРКИ (АДМИН) ==========
+@dp.callback_query(F.data == "admin_gifts")
+async def admin_gifts_menu(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    
+    lang = get_language(callback.from_user.id)
+    balance = get_bot_balance()
+    
+    text = get_text(lang, "select_gift") + f"\n\n💰 Баланс бота: {balance}⭐"
+    
+    await send_message_safe(
+        message=callback.message,
+        text=text,
+        photo_key="welcome_photo",
+        reply_markup=gifts_list_kb()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("gift_select_"))
+async def gift_select(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    
+    gift_key = callback.data.replace("gift_select_", "")
+    gift_info = GIFTS.get(gift_key)
+    
+    if not gift_info:
+        await callback.answer("Подарок не найден")
+        return
+    
+    balance = get_bot_balance()
+    lang = get_language(callback.from_user.id)
+    
+    if balance < gift_info["price"]:
+        await callback.answer(get_text(lang, "gift_error", price=gift_info["price"], balance=balance))
+        return
+    
+    # Сохраняем выбранный подарок во временную переменную
+    set_setting("selected_gift", gift_key)
+    await callback.message.answer(get_text(lang, "enter_comment"))
+    await callback.answer()
+
+@dp.message(F.text)
+async def send_gift_with_comment(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    
+    gift_key = get_setting("selected_gift")
+    if not gift_key:
+        return
+    
+    gift_info = GIFTS.get(gift_key)
+    if not gift_info:
+        set_setting("selected_gift", "")
+        return
+    
+    comment = message.text.strip()
+    if len(comment) > 128:
+        await message.answer("❌ Комментарий слишком длинный! Максимум 128 символов.")
+        return
+    
+    balance = get_bot_balance()
+    lang = get_language(message.from_user.id)
+    
+    if balance < gift_info["price"]:
+        await message.answer(get_text(lang, "gift_error", price=gift_info["price"], balance=balance))
+        set_setting("selected_gift", "")
+        return
+    
+    # Отправляем подарок админу самому себе (для теста) или можно выбрать получателя
+    # Здесь отправляем самому админу
+    try:
+        await bot.send_gift(
+            user_id=message.from_user.id,
+            gift_id=gift_info["id"],
+            text=comment,
+            text_parse_mode="HTML"
+        )
+        
+        # Списываем средства
+        new_balance = update_bot_balance(-gift_info["price"])
+        
+        await message.answer(
+            get_text(lang, "gift_sent", 
+                    gift_name=gift_info["name"], 
+                    comment=comment, 
+                    price=gift_info["price"], 
+                    balance=new_balance)
+        )
+        
+        # Очищаем выбранный подарок
+        set_setting("selected_gift", "")
+        
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при отправке подарка: {e}")
+
+@dp.callback_query(F.data == "admin_bot_balance")
+async def admin_bot_balance(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    
+    lang = get_language(callback.from_user.id)
+    balance = get_bot_balance()
+    
+    text = get_text(lang, "gift_balance", balance=balance) + "\n\n"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=get_text(lang, "add_balance"), callback_data="admin_add_balance")],
+        [InlineKeyboardButton(text="◀ Назад", callback_data="admin_panel")]
+    ])
+    
+    await send_message_safe(
+        message=callback.message,
+        text=text,
+        photo_key="welcome_photo",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_add_balance")
+async def admin_add_balance(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    
+    lang = get_language(callback.from_user.id)
+    await callback.message.answer(get_text(lang, "enter_amount"))
+    await callback.answer()
+
+@dp.message(lambda msg: msg.text and msg.text.isdigit() and msg.from_user.id in ADMIN_IDS)
+async def add_bot_balance(message: Message):
+    amount = int(message.text)
+    if amount <= 0:
+        await message.answer("❌ Сумма должна быть больше 0")
+        return
+    
+    new_balance = update_bot_balance(amount)
+    lang = get_language(message.from_user.id)
+    await message.answer(get_text(lang, "balance_added", amount=amount, balance=new_balance))
 
 @dp.callback_query(F.data == "admin_orders")
 async def admin_orders(callback: CallbackQuery):
