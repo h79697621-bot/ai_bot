@@ -261,8 +261,7 @@ async def pay_account_rub(callback: CallbackQuery):
     text = f"💳 Счет на оплату\n\n"
     text += f"Товар: Аккаунт {country_name}\n"
     text += f"Сумма к оплате: {amount}₽\n\n"
-    text += f"📱 Номер получателя: +7 915 561-37-90\n"
-    text += f"🏦 Банк: Сбербанк\n\n"
+    text += f"🏦 Банк: Втб\n\n"
     text += f"🔗 Ссылка для оплаты:\n{payment_link}\n\n"
     text += f"📩 После оплаты отправьте чек сюда: @{SELLER_USERNAME}"
     
